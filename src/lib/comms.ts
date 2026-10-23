@@ -1,5 +1,5 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
-import { audit, json } from "./audit";
+import { audit, json, notify } from "./audit";
 import { setting } from "./config";
 import { db } from "./db";
 import { checkEligibility } from "./eligibility";
@@ -252,12 +252,13 @@ export async function sendOwnerSms(ws: string, phone: string, body: string) {
 
 const STOP_WORDS = /^\s*(stop|stopall|unsubscribe|cancel|end|quit|remove me|do not (call|text)|don'?t (call|text))\b/i;
 
-export async function onInboundSms(ws: string, p: { From: string; To: string; Body: string; MessageSid: string }) {
+export async function onInboundSms(ws: string, p: { From: string; To: string; Body: string; MessageSid: string; media?: { url: string; type: string }[] }) {
   const from = e164(p.From);
   const contact = from ? await db.contact.findFirst({ where: { workspaceId: ws, OR: [{ phone: from }, { phone2: from }] } }) : null;
   const it = await db.interaction.create({
-    data: { workspaceId: ws, contactId: contact?.id, channel: "sms", direction: "inbound", provider: "twilio", providerRef: p.MessageSid, fromAddr: from, toAddr: p.To, body: p.Body },
+    data: { workspaceId: ws, contactId: contact?.id, channel: "sms", direction: "inbound", provider: "twilio", providerRef: p.MessageSid, fromAddr: from, toAddr: p.To, body: p.Body || (p.media?.length ? `[${p.media.length} photo${p.media.length > 1 ? "s" : ""}]` : "") },
   });
+  if (contact && p.media?.length) await saveInboundMedia(ws, contact.id, p.media).catch((e) => console.error("[mms]", e));
   if (contact && STOP_WORDS.test(p.Body)) {
     await emit(ws, "contact.opt_out", { type: "contact", id: contact.id }, { reason: `Texted "${p.Body.slice(0, 40)}"`, source: "opt_out" });
     return;
@@ -266,6 +267,26 @@ export async function onInboundSms(ws: string, p: { From: string; To: string; Bo
     await db.contact.update({ where: { id: contact.id }, data: { lastContactAt: new Date() } });
     await emit(ws, "interaction.created", { type: "interaction", id: it.id });
   }
+}
+
+/** Photos and files texted in (MMS): saved on the person's latest deal (or their record), and repairs re-estimated. */
+async function saveInboundMedia(ws: string, contactId: string, media: { url: string; type: string }[]) {
+  const sid = await setting(ws, "TWILIO_ACCOUNT_SID");
+  const token = await setting(ws, "TWILIO_AUTH_TOKEN");
+  const deal = await db.opportunity.findFirst({ where: { workspaceId: ws, sellerId: contactId }, orderBy: { updatedAt: "desc" } });
+  const { saveFile } = await import("./files");
+  let photos = 0;
+  for (const [i, m] of media.slice(0, 10).entries()) {
+    const res = await fetch(m.url, { headers: sid && token ? { authorization: "Basic " + Buffer.from(`${sid}:${token}`).toString("base64") } : {}, signal: AbortSignal.timeout(30_000) });
+    if (!res.ok) continue;
+    const data = Buffer.from(await res.arrayBuffer());
+    const ext = (m.type.split("/")[1] || "bin").replace("jpeg", "jpg");
+    const isImage = m.type.startsWith("image/");
+    if (isImage) photos++;
+    await saveFile(ws, { entityType: deal ? "opportunity" : "contact", entityId: deal?.id || contactId, kind: isImage ? "photo" : "other", name: `texted-${new Date().toISOString().slice(0, 10)}-${i + 1}.${ext}`, mime: m.type, data, uploadedBy: `contact:${contactId}`, note: "Texted in by the seller" });
+  }
+  if (deal && photos) await createTask(ws, { kind: "photo_repairs", title: "Estimate repairs from the photos the seller texted", entityType: "opportunity", entityId: deal.id, dueAt: new Date(Date.now() + 60_000), dedupeKey: `photos:${deal.id}` });
+  if (photos) await notify(ws, "Photos received", `${photos} photo${photos > 1 ? "s" : ""} texted in${deal ? " and added to the deal" : ""}.`, deal ? `/deals/${deal.id}?tab=files` : `/contacts/${contactId}`);
 }
 
 /** Human call: Twilio rings the team member's phone first, then connects the contact. Recorded. */

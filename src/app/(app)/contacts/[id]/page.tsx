@@ -12,6 +12,7 @@ import { BUYER_OTHER, BUYER_STATUSES, label } from "@/lib/stages";
 import { ago, fmtDate, fullName, usd } from "@/lib/util";
 import { addNoteAction, callContactAction, consentAction, dncContactAction, emailContactAction, saveBuyBoxAction, textContactAction, updateContactAction } from "../../../actions/records";
 import { InteractionList } from "../../deals/[id]/sections";
+import { correctFactAction, editSummaryAction } from "../../../actions/deals";
 import { FilesPanel } from "@/components/files";
 
 export default async function ContactPage({ params }: { params: Promise<{ id: string }> }) {
@@ -72,9 +73,9 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
       )}
       <div className="grid gap-5 lg:grid-cols-3">
         <div className="space-y-5 lg:col-span-2">
-          {ct.summary && (
+          {(ct.summary || writable) && (
             <Card title="Where things stand">
-              <p className="text-sm">{ct.summary}</p>
+              {ct.summary ? <p className="text-sm">{ct.summary}</p> : <p className="text-sm text-muted">No summary yet: it&apos;s written after the first conversation.</p>}
               {ct.openQuestions.length > 0 && (
                 <ul className="mt-2 ml-4 list-disc text-sm text-muted">
                   {ct.openQuestions.map((q) => (
@@ -82,6 +83,19 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
                   ))}
                 </ul>
               )}
+              {writable && (
+                <details className="mt-3">
+                  <summary className="cursor-pointer text-xs text-brand">Edit what the AI wrote</summary>
+                  <ActionForm action={editSummaryAction} className="mt-2 space-y-2">
+                    <input type="hidden" name="contactId" value={id} />
+                    <textarea name="summary" defaultValue={ct.summary ?? ""} rows={2} className="field" />
+                    <textarea name="openQuestions" defaultValue={ct.openQuestions.join("\n")} rows={3} className="field" placeholder="Open questions, one per line" />
+                    <Submit className="btn btn-ghost btn-sm">Save</Submit>
+                  </ActionForm>
+                </details>
+              )}
+            </Card>
+          )}
             </Card>
           )}
 
@@ -380,11 +394,33 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
                     <span className="text-muted">{label(f.field)}:</span> {typeof f.value === "string" ? f.value : JSON.stringify(f.value)}
                     <span className={`ml-1 text-xs ${f.kind === "verified" ? "text-brand" : "text-muted"}`}>({f.kind})</span>
                     {f.conflictsWith && <span className="ml-1 text-xs text-warn">conflicts</span>}
+                    {writable && (
+                      <details className="inline-block">
+                        <summary className="ml-1 inline cursor-pointer text-xs text-brand">correct</summary>
+                        <ActionForm action={correctFactAction} className="mt-1 flex gap-1">
+                          <input type="hidden" name="factId" value={f.id} />
+                          <input name="value" defaultValue={typeof f.value === "string" ? f.value : JSON.stringify(f.value)} className="field py-1 text-xs" />
+                          <Submit className="btn btn-ghost btn-sm">Save</Submit>
+                        </ActionForm>
+                        <ActionButton action={correctFactAction} hidden={{ factId: f.id, remove: "1" }} className="text-xs text-bad underline" confirm="Remove this fact? It stays in the history.">
+                          remove
+                        </ActionButton>
+                      </details>
+                    )}
                   </li>
                 ))}
               </ul>
             ) : (
               <p className="text-sm text-muted">Facts from calls and notes appear here, with where they came from.</p>
+            )}
+            {writable && (
+              <ActionForm action={correctFactAction} className="mt-3 flex flex-wrap gap-1" resetOnOk>
+                <input type="hidden" name="entityType" value="contact" />
+                <input type="hidden" name="entityId" value={id} />
+                <input name="field" className="field w-32 py-1 text-xs" placeholder="What (e.g. roof age)" />
+                <input name="value" className="field flex-1 py-1 text-xs" placeholder="Value" />
+                <Submit className="btn btn-ghost btn-sm">Add fact</Submit>
+              </ActionForm>
             )}
           </Card>
 

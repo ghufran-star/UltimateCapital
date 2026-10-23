@@ -215,7 +215,7 @@ export async function executeTask(t: { id: string; workspaceId: string; kind: st
     case "demand_campaign":
       return (await import("./matching")).startDemandCampaign(ws, t.entityId!, String(p.mode || "anonymous"));
     case "buyer_outreach":
-      return (await import("./matching")).outreachToBuyer(ws, t.entityId!, t.contactId!, String(p.mode || "anonymous"), Number(p.step || 1));
+      return (await import("./matching")).outreachToBuyer(ws, t.entityId!, t.contactId!, String(p.mode || "anonymous"), Number(p.step || 1), Boolean(p.manual));
     case "call": {
       const r = await (await import("./comms")).placeCall(ws, { contactId: t.contactId!, agentRole: String(p.agentRole || "seller_acquisition"), opportunityId: (p.opportunityId as string) || undefined, campaignId: (p.campaignId as string) || undefined, memberId: (p.memberId as string) || undefined });
       // Autopilot steps the AI may not do (e.g. no AI-voice consent) go to a person instead of being dropped.

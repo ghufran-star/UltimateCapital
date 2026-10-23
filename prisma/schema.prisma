@@ -612,7 +612,8 @@ model ContractTemplate {
 model Contract {
   id            String    @id @default(cuid())
   workspaceId   String
-  opportunityId String
+  opportunityId String? // empty for a standalone document sent for signature
+  title         String? // standalone documents: what the document is
   templateId    String?
   kind          String
   status        String    @default("draft") // draft | sent | viewed | partially_signed | signed | effective | expired | terminated
@@ -629,7 +630,7 @@ model Contract {
   updatedAt     DateTime  @updatedAt
 
   workspace   Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  opportunity Opportunity   @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  opportunity Opportunity?  @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
   signers     ContractSigner[]
 }
 

@@ -15,6 +15,8 @@ import { ago, fmtDate, fullName, usd } from "@/lib/util";
 import { checklistAction, countersignAction, createContractAction, openTitleAction, paymentAction, reprocessAction, sendContractAction, settlementAction, taskAction, terminateContractAction, transactionAction } from "../../../actions/ops";
 import { addNoteAction, chooseBuyerAction, compAction, dealCampaignAction, interestAction, recordOfferAction, revalueAction, updatePropertyAction } from "../../../actions/records";
 import type { Deal } from "./include";
+import { BulkIdsClient, SelectAll } from "../bulk";
+import { addBuyerToDealAction, emailTitleAction, pitchSelectedAction } from "../../../actions/deals";
 
 // ---------- Numbers ----------
 
@@ -288,7 +290,8 @@ export function NumbersTab({ opp, v, calc, params, writable, playbook }: { opp: 
 
 // ---------- Buyers ----------
 
-export function BuyersTab({ opp, calc, ladder, writable }: { opp: Deal; calc: Calculation | null; ladder: { rounds: number[]; floor: number } | null; writable: boolean }) {
+export async function BuyersTab({ opp, calc, ladder, writable }: { opp: Deal; calc: Calculation | null; ladder: { rounds: number[]; floor: number } | null; writable: boolean }) {
+  const allBuyers = writable ? await db.contact.findMany({ where: { workspaceId: opp.workspaceId, kind: "buyer", doNotContact: false, id: { notIn: opp.interests.map((i) => i.contactId) } }, select: { id: true, firstName: true, lastName: true, company: true }, orderBy: { updatedAt: "desc" }, take: 2000 }) : [];
   const underContract = opp.contracts.some((k) => k.kind === "seller_purchase" && k.status === "effective");
   const serious = opp.interests.filter((i) => i.serious);
   const chosen = opp.transaction?.buyerId;
@@ -334,11 +337,32 @@ export function BuyersTab({ opp, calc, ladder, writable }: { opp: Deal; calc: Ca
       </Card>
 
       <Card title="Matched buyers" pad={false}>
+        {writable && (
+          <div className="flex flex-wrap items-center gap-2 border-b border-line p-3">
+            {opp.interests.length > 0 && (
+              <ActionForm action={pitchSelectedAction} className="flex flex-wrap items-center gap-2">
+                <input type="hidden" name="opportunityId" value={opp.id} />
+                <BulkIdsClient tickClass="buyer-tick" />
+                <Submit className="btn btn-primary btn-sm">Send to ticked investors</Submit>
+              </ActionForm>
+            )}
+            <ActionForm action={addBuyerToDealAction} className="flex flex-1 flex-wrap items-center gap-2" resetOnOk>
+              <input type="hidden" name="opportunityId" value={opp.id} />
+              <Combo name="contactId" options={allBuyers.map((b) => ({ key: b.id, label: fullName(b) }))} placeholder="Add any investor by name" className="min-w-64 flex-1" />
+              <Submit className="btn btn-ghost btn-sm">Add to deal</Submit>
+            </ActionForm>
+          </div>
+        )}
         {opp.interests.length ? (
           <div className="overflow-x-auto">
             <table className="data">
               <thead>
                 <tr>
+                  {writable && (
+                    <th className="w-8">
+                      <SelectAll tickClass="buyer-tick" />
+                    </th>
+                  )}
                   <th>Buyer</th>
                   <th>Fit</th>
                   <th>Stage</th>
@@ -351,6 +375,11 @@ export function BuyersTab({ opp, calc, ladder, writable }: { opp: Deal; calc: Ca
                   const reasons = (i.reasons || []) as string[];
                   return (
                     <tr key={i.id} className={i.contactId === chosen ? "bg-brand-soft" : ""}>
+                      {writable && (
+                        <td>
+                          <input type="checkbox" className="buyer-tick h-4 w-4" value={i.contactId} aria-label={`Select ${fullName(i.contact)}`} />
+                        </td>
+                      )}
                       <td>
                         <Link href={`/contacts/${i.contactId}`} className="font-medium hover:text-brand">
                           {fullName(i.contact)}
@@ -530,7 +559,7 @@ export async function ContractsTab({ opp, ws, writable, userName }: { opp: Deal;
       })}
 
       {writable && (
-        <Card title="Create a contract">
+        <Card title="Create a contract" actions={<Link href={`/closing/documents/new?deal=${opp.id}`} className="text-sm text-brand">Send your own PDF</Link>}>
           {templates.length ? (
             <div className="space-y-3">
               {templates.map((t) => {
@@ -740,6 +769,21 @@ export async function ClosingTab({ opp, ws, writable }: { opp: Deal; ws: string;
             </div>
           )}
         </Card>
+        {writable && (
+          <Card title="Email title yourself">
+            <ActionForm action={emailTitleAction} resetOnOk>
+              <input type="hidden" name="opportunityId" value={opp.id} />
+              <input name="to" className="field" placeholder={tx?.titleCompany?.email || "title@company.com"} />
+              <input name="subject" className="field" placeholder="Subject" defaultValue={`${opp.property.address}: `} />
+              <textarea name="body" rows={4} className="field" placeholder="Message" />
+              <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox" name="attachContracts" /> Attach the signed contracts
+              </label>
+              <p className="text-xs text-muted">Replies go to this deal&apos;s inbox, so the checklist updates itself.</p>
+              <Submit className="btn btn-ghost">Send</Submit>
+            </ActionForm>
+          </Card>
+        )}
         {tx && (
           <Card title="Settlement statement">
             {settlement?.checkedAt && (

@@ -78,7 +78,7 @@ export async function countersignAction(_: ActionState, fd: FormData): Promise<A
 
 export async function terminateContractAction(_: ActionState, fd: FormData): Promise<ActionState> {
   return act(async () => {
-    const c = await requireCtx("approve", { write: true });
+    const c = await requireCtx("contracts", { write: true });
     const id = String(fd.get("contractId"));
     await db.contract.findFirstOrThrow({ where: { id, workspaceId: c.workspace.id } });
     await terminateContract(c.workspace.id, id, c.user.id, str(fd.get("reason")) || "Terminated by owner");

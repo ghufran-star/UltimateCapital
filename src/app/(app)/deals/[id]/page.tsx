@@ -34,6 +34,8 @@ export default async function DealPage({ params, searchParams }: { params: Promi
   const v = opp.valuations[0];
   const calc = v && !v.blocked ? (v.result as unknown as Calculation) : null;
   const seller = opp.sellerId ? await db.contact.findUnique({ where: { id: opp.sellerId } }) : null;
+  const members = await db.membership.findMany({ where: { workspaceId: ws }, include: { user: { select: { name: true } } } });
+  const photos = await db.fileObject.findMany({ where: { workspaceId: ws, entityType: "opportunity", entityId: opp.id, mime: { startsWith: "image/" } }, select: { id: true, name: true }, orderBy: { createdAt: "desc" } });
   const rs = await activeRuleSet(ws);
   const { params: rp } = resolveParams(rs.data, { state: opp.property.state, market: opp.property.city, zip: opp.property.zip, propertyType: opp.property.propertyType, dealType: opp.dealType, exit: opp.exitStrategy, conditionTier: opp.property.conditionTier, occupancy: opp.property.occupancy, titleFlags: opp.property.titleFlags, arv: calc?.arv });
   const near = calc ? nearAgreement(opp.sellerLowest, calc.maxBuy, rp) : false;
@@ -50,7 +52,7 @@ export default async function DealPage({ params, searchParams }: { params: Promi
     { key: "buyers", label: "Buyers", count: counts.buyers },
     { key: "contracts", label: "Contracts", count: counts.contracts },
     { key: "closing", label: "Closing" },
-    { key: "files", label: "Files" },
+    { key: "files", label: "Photos & files", count: photos.length },
     { key: "activity", label: "Activity" },
   ].map((t) => ({ ...t, href: `/deals/${opp.id}?tab=${t.key}` }));
 
@@ -224,6 +226,16 @@ export default async function DealPage({ params, searchParams }: { params: Promi
                   <L label="Lead source">
                     <Combo name="leadSource" options={LEAD_SOURCES} defaultValue={opp.leadSource} emptyLabel="Unknown" placeholder="Unknown" disabled={!writable} />
                   </L>
+                  <L label="Assigned to">
+                    <select name="assigneeId" defaultValue={opp.assigneeId ?? ""} className="field" disabled={!writable}>
+                      <option value="">Unassigned</option>
+                      {members.map((m) => (
+                        <option key={m.userId} value={m.userId}>
+                          {m.user.name}
+                        </option>
+                      ))}
+                    </select>
+                  </L>
                   <L label="Next step">
                     <input name="nextStep" defaultValue={opp.nextStep ?? ""} className="field" placeholder="e.g. walkthrough Tuesday 2pm" />
                   </L>
@@ -252,6 +264,19 @@ export default async function DealPage({ params, searchParams }: { params: Promi
           </div>
 
           <div className="space-y-5">
+            <Card title={`Photos (${photos.length})`} actions={<Link href={`/deals/${opp.id}?tab=files`} className="text-sm text-brand">{photos.length ? "All" : "Add"}</Link>}>
+              {photos.length ? (
+                <div className="grid grid-cols-3 gap-1.5">
+                  {photos.slice(0, 6).map((ph) => (
+                    <a key={ph.id} href={`/api/files/${ph.id}`} target="_blank">
+                      <img src={`/api/files/${ph.id}`} alt={ph.name} className="aspect-square w-full rounded-lg object-cover" loading="lazy" />
+                    </a>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-muted">No photos yet. Take or upload them on the Photos tab, or ask the seller to text them to your number: they're saved here automatically.</p>
+              )}
+            </Card>
             <Card title="Seller">
               {seller ? (
                 <div className="space-y-3">
@@ -275,10 +300,21 @@ export default async function DealPage({ params, searchParams }: { params: Promi
                       <ActionButton action={callContactAction} hidden={{ contactId: seller.id, mode: "me", opportunityId: opp.id }} className="btn btn-primary btn-sm">
                         📞 Call (me)
                       </ActionButton>
-                      <ActionButton action={callContactAction} hidden={{ contactId: seller.id, mode: "ai", opportunityId: opp.id, agentRole: ["NEGOTIATION", "OFFER_READY"].includes(opp.stage) ? "negotiation" : ["QUALIFIED", "PROPERTY_DISCOVERY"].includes(opp.stage) ? "property_discovery" : "seller_acquisition" }} className="btn btn-ghost btn-sm">
-                        🤖 AI call
-                      </ActionButton>
                     </div>
+                  )}
+                  {writable && !seller.doNotContact && (
+                    <ActionForm action={callContactAction} className="flex flex-wrap items-center gap-2">
+                      <input type="hidden" name="contactId" value={seller.id} />
+                      <input type="hidden" name="mode" value="ai" />
+                      <input type="hidden" name="opportunityId" value={opp.id} />
+                      <select name="agentRole" defaultValue={["NEGOTIATION", "OFFER_READY"].includes(opp.stage) ? "negotiation" : ["QUALIFIED", "PROPERTY_DISCOVERY"].includes(opp.stage) ? "property_discovery" : "seller_acquisition"} className="field w-auto text-sm">
+                        <option value="seller_acquisition">Seller Acquisition agent</option>
+                        <option value="property_discovery">Property Discovery agent</option>
+                        <option value="negotiation">Negotiation agent</option>
+                        <option value="transaction">Transaction Coordinator agent</option>
+                      </select>
+                      <Submit className="btn btn-ghost btn-sm">🤖 AI call</Submit>
+                    </ActionForm>
                   )}
                   {writable && !seller.doNotContact && (
                     <ActionForm action={textContactAction} resetOnOk className="space-y-2">

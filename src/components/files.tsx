@@ -67,6 +67,10 @@ export async function FilesPanel({ ws, entityType, entityId, writable, investorS
           <input type="hidden" name="entityType" value={entityType} />
           <input type="hidden" name="entityId" value={entityId} />
           <input type="file" name="files" multiple className="field max-w-xs" />
+          <label className="btn btn-ghost cursor-pointer">
+            📷 Take photo
+            <input type="file" name="files" accept="image/*" capture="environment" multiple className="hidden" />
+          </label>
           <select name="kind" className="field w-auto">
             {FILE_KINDS.map((k) => (
               <option key={k.key} value={k.key}>

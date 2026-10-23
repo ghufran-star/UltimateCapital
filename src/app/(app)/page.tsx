@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { contractHref } from "@/lib/contracts";
 import { AutoRefresh } from "@/components/client";
 import { Card, Empty, HotBadge, PageHeader, Stat, StatusBadge } from "@/components/ui";
 import { db } from "@/lib/db";
@@ -154,7 +155,7 @@ export default async function CommandCentre() {
                 const items = [k.emdDueAt && ["Earnest money", k.emdDueAt], k.optionEndsAt && ["Option ends", k.optionEndsAt], k.closingAt && ["Closing", k.closingAt]].filter(Boolean) as [string, Date][];
                 return (
                   <li key={k.id}>
-                    <Link href={`/deals/${k.opportunityId}?tab=contracts`} className="block px-4 py-3 text-sm hover:bg-soft">
+                    <Link href={contractHref(k)} className="block px-4 py-3 text-sm hover:bg-soft">
                       <div className="font-medium">{f.property_address}</div>
                       <div className="text-xs text-muted">{items.map(([l, d]) => `${l} ${fmtDate(d)}`).join(" · ")}</div>
                     </Link>

@@ -73,7 +73,7 @@ export async function contractFields(ws: string, opportunityId: string, kind: st
 
 export async function createContract(
   ws: string,
-  o: { opportunityId: string; templateId: string; fields: Record<string, string>; signers: { role: string; name: string; email?: string; phone?: string; order: number }[]; actor: string }
+  o: { opportunityId: string | null; templateId: string; fields: Record<string, string>; signers: { role: string; name: string; email?: string; phone?: string; order: number }[]; actor: string; title?: string }
 ) {
   const t = await db.contractTemplate.findUniqueOrThrow({ where: { id: o.templateId } });
   const body = t.pdf ? `${t.name} (PDF). Fields:\n${Object.entries(o.fields).map(([k, v]) => `${k}: ${v}`).join("\n")}` : fill(t.body, o.fields);
@@ -82,6 +82,7 @@ export async function createContract(
     data: {
       workspaceId: ws,
       opportunityId: o.opportunityId,
+      title: o.title || null,
       templateId: t.id,
       kind: t.kind,
       fields: json(o.fields),
@@ -95,6 +96,9 @@ export async function createContract(
   await audit(ws, o.actor, "contract_created", { type: "contract", id: c.id }, { meta: { template: t.name, version: t.version } });
   return c;
 }
+
+/** Where a contract lives in the app: its deal, or the standalone documents page. */
+export const contractHref = (c: { id: string; opportunityId: string | null }) => (c.opportunityId ? `/deals/${c.opportunityId}?tab=contracts` : `/closing/documents/${c.id}`);
 
 /** Fills a template from the deal and sets up its signers (sellers on title, or the chosen buyer, then the company). */
 export async function prepareContract(ws: string, o: { opportunityId: string; templateId: string; overrides?: Record<string, string>; userId: string }) {
@@ -142,11 +146,11 @@ export async function sendForSignature(ws: string, contractId: string, actor: st
     const token = randomBytes(24).toString("base64url");
     await db.contractSigner.update({ where: { id: s.id }, data: { tokenHash: sha(token), status: "sent", expiresAt: new Date(Date.now() + 14 * 864e5) } });
     const link = `${base}/sign/${token}`;
-    const msg = `Hi ${s.name.split(" ")[0]}, here is the agreement from ${company} for ${(c.fields as Record<string, string>).property_address || "the property"} to review and sign: ${link}`;
-    if (s.email) await comms.sendEmail(ws, { to: s.email, subject: `Please review and sign: ${(c.fields as Record<string, string>).property_address || "agreement"}`, text: `${msg}\n\nThe link is private to you and expires in 14 days. You can review the full document before signing.`, opportunityId: c.opportunityId, skipChecks: true });
+    const msg = `Hi ${s.name.split(" ")[0]}, here is ${c.title ? `"${c.title}"` : "the agreement"} from ${company}${(c.fields as Record<string, string>).property_address ? ` for ${(c.fields as Record<string, string>).property_address}` : ""} to review and sign: ${link}`;
+    if (s.email) await comms.sendEmail(ws, { to: s.email, subject: `Please review and sign: ${c.title || (c.fields as Record<string, string>).property_address || "agreement"}`, text: `${msg}\n\nThe link is private to you and expires in 14 days. You can review the full document before signing.`, opportunityId: c.opportunityId ?? undefined, skipChecks: true });
     if (s.phone) {
       const contact = await db.contact.findFirst({ where: { workspaceId: ws, phone: s.phone } });
-      if (contact && !contact.doNotContact) await comms.sendSms(ws, { contactId: contact.id, body: msg, opportunityId: c.opportunityId, skipChecks: true });
+      if (contact && !contact.doNotContact) await comms.sendSms(ws, { contactId: contact.id, body: msg, opportunityId: c.opportunityId ?? undefined, skipChecks: true });
     }
     sent.push(s.name);
   }
@@ -166,7 +170,7 @@ export async function signingReminder(ws: string, contractId: string) {
   const waiting = c.signers.filter((s) => s.role !== "company" && !["signed", "declined"].includes(s.status));
   if (!waiting.length) return "Everyone has signed";
   const r = await sendForSignature(ws, contractId, "system");
-  await notify(ws, "Signing reminder sent", `${(c.fields as Record<string, string>).property_address || "Agreement"}: still waiting on ${waiting.map((w) => w.name).join(", ")}.`, `/deals/${c.opportunityId}?tab=contracts`);
+  await notify(ws, "Signing reminder sent", `${(c.fields as Record<string, string>).property_address || "Agreement"}: still waiting on ${waiting.map((w) => w.name).join(", ")}.`, contractHref(c));
   return r;
 }
 
@@ -202,8 +206,8 @@ export async function declineToSign(signerId: string, reason: string, ip: string
   await db.contractSigner.update({ where: { id: s.id }, data: { status: "declined", declineReason: reason.slice(0, 1000), ip, userAgent: ua.slice(0, 300) } });
   await db.contract.update({ where: { id: s.contractId }, data: { status: "declined" } });
   await audit(ws, `signer:${s.id}`, "contract_declined", { type: "contract", id: s.contractId }, { meta: { reason, ip } });
-  await notify(ws, "Contract declined", `${s.name}: ${reason || "no reason given"}`, `/deals/${s.contract.opportunityId}?tab=contracts`);
-  await createTask(ws, { kind: "review", title: `${s.name} declined to sign: follow up`, entityType: "opportunity", entityId: s.contract.opportunityId, priority: 1, dedupeKey: `declined:${s.contractId}` });
+  await notify(ws, "Contract declined", `${s.name}: ${reason || "no reason given"}`, contractHref(s.contract));
+  await createTask(ws, { kind: "review", title: `${s.name} declined to sign: follow up`, entityType: s.contract.opportunityId ? "opportunity" : "contract", entityId: s.contract.opportunityId || s.contractId, priority: 1, dedupeKey: `declined:${s.contractId}` });
   await cancelReminders(s.contractId);
 }
 
@@ -237,7 +241,7 @@ export async function sign(signerId: string, o: { signature: string; initials: s
   });
   const ws = s.contract.workspaceId;
   await audit(ws, `signer:${s.id}`, "contract_signed", { type: "contract", id: s.contractId }, { meta: { name: s.name, role: s.role, ip: o.ip, ua: o.ua } });
-  await notify(ws, "Signed", `${s.name} signed ${(s.contract.fields as Record<string, string>).property_address || "the agreement"}`, `/deals/${s.contract.opportunityId}`);
+  await notify(ws, "Signed", `${s.name} signed ${(s.contract.fields as Record<string, string>).property_address || "the agreement"}`, contractHref(s.contract));
   await afterSignature(ws, s.contractId);
 }
 
@@ -258,7 +262,8 @@ async function afterSignature(ws: string, contractId: string) {
   const c = await db.contract.findUniqueOrThrow({ where: { id: contractId }, include: { signers: { orderBy: { order: "asc" } } } });
   const external = c.signers.filter((s) => s.role !== "company");
   const allExternal = external.every((s) => s.status === "signed");
-  const companySigned = c.signers.some((s) => s.role === "company" && s.status === "signed");
+  // No company signer on the document (e.g. a PDF sent for others to sign) means nothing to countersign.
+  const companySigned = !c.signers.some((s) => s.role === "company") || c.signers.some((s) => s.role === "company" && s.status === "signed");
   if (!allExternal) {
     await db.contract.update({ where: { id: c.id }, data: { status: "partially_signed" } });
     await sendForSignature(ws, c.id, "system"); // next signer in order
@@ -266,8 +271,8 @@ async function afterSignature(ws: string, contractId: string) {
   }
   if (!companySigned) {
     await db.contract.update({ where: { id: c.id }, data: { status: "partially_signed" } });
-    await createTask(ws, { kind: "review", title: "Countersign the agreement", entityType: "opportunity", entityId: c.opportunityId, priority: 1, dedupeKey: `countersign:${c.id}` });
-    await notify(ws, "Ready to countersign", `All parties signed. Countersign to make it effective.`, `/deals/${c.opportunityId}`);
+    await createTask(ws, { kind: "review", title: "Countersign the agreement", entityType: c.opportunityId ? "opportunity" : "contract", entityId: c.opportunityId || c.id, priority: 1, dedupeKey: `countersign:${c.id}` });
+    await notify(ws, "Ready to countersign", `All parties signed. Countersign to make it effective.`, contractHref(c));
     return;
   }
   const pdf = await buildPdf(ws, c.id);
@@ -309,7 +314,7 @@ async function sendSignedCopies(ws: string, contractId: string, pdf: Uint8Array)
       to: s.email,
       subject: `Signed copy: ${f.property_address || "your agreement"}`,
       text: `Hi ${s.name.split(" ")[0]},\n\nAll parties have signed. Attached is your copy of the agreement for ${f.property_address || "the property"}, with its certificate of completion.\n\n${company}`,
-      opportunityId: c.opportunityId,
+      opportunityId: c.opportunityId ?? undefined,
       attachments: [{ filename, content: Buffer.from(pdf) }],
       skipChecks: true,
     });
@@ -430,6 +435,10 @@ export async function buildPdf(ws: string, contractId: string) {
 /** Contract became effective: start closing, deadlines, and (for seller contracts) full disposition. */
 export async function onContractEffective(ws: string, contractId: string) {
   const c = await db.contract.findUniqueOrThrow({ where: { id: contractId } });
+  if (!c.opportunityId) {
+    await notify(ws, "Document signed", `"${c.title || "Document"}" is fully signed. Everyone has been emailed a copy.`, contractHref(c));
+    return "Document signed";
+  }
   const opp = await db.opportunity.findUniqueOrThrow({ where: { id: c.opportunityId } });
   if (c.kind === "seller_purchase") {
     await db.opportunity.update({ where: { id: opp.id }, data: { stage: "DISPOSITION", exception: null } });
@@ -464,13 +473,14 @@ export async function deadlineReminder(ws: string, contractId: string, which: st
   const c = await db.contract.findUniqueOrThrow({ where: { id: contractId } });
   if (["expired", "terminated"].includes(c.status)) return "Contract no longer active";
   const label = which === "emd" ? `Earnest money due ${c.emdDueAt?.toDateString()}` : which === "option" ? `Option period ends ${c.optionEndsAt?.toDateString()}` : `Closing ${c.closingAt?.toDateString()}`;
-  await notify(ws, "Deadline", `${(c.fields as Record<string, string>).property_address}: ${label}`, `/deals/${c.opportunityId}`);
+  await notify(ws, "Deadline", `${c.title || (c.fields as Record<string, string>).property_address}: ${label}`, contractHref(c));
   return label;
 }
 
 export async function terminateContract(ws: string, contractId: string, actor: string, reason: string) {
   const c = await db.contract.update({ where: { id: contractId }, data: { status: "terminated" } });
-  await db.opportunity.update({ where: { id: c.opportunityId }, data: { exception: "CONTRACT_FAILED" } });
   await audit(ws, actor, "contract_terminated", { type: "contract", id: contractId }, { meta: { reason } });
+  if (!c.opportunityId) return;
+  await db.opportunity.update({ where: { id: c.opportunityId }, data: { exception: "CONTRACT_FAILED" } });
   await emit(ws, "contract.ended", { type: "opportunity", id: c.opportunityId });
 }

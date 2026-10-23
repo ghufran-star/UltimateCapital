@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { contractHref } from "@/lib/contracts";
 import { ActionForm, RowLink, Submit } from "@/components/client";
 import { Card, Empty, PageHeader, Stat, StatusBadge, Tabs } from "@/components/ui";
 import { db } from "@/lib/db";
@@ -24,7 +25,7 @@ export default async function Closing({ searchParams }: { searchParams: Promise<
   const writable = !c.workspace.isDemo && can(c.role, "closing");
   return (
     <div>
-      <PageHeader title="Contracts & closing" sub="E-signature, title, earnest money, closing and getting paid." actions={<><a href="/api/export/payments" className="btn btn-ghost">Payments CSV</a><Link href="/settings/title" className="btn btn-ghost">Title companies ({titleCos.length})</Link></>} />
+      <PageHeader title="Contracts & closing" sub="E-signature, title, earnest money, closing and getting paid." actions={<><Link href="/closing/documents" className="btn btn-primary">Send a PDF for signature</Link><a href="/api/export/payments" className="btn btn-ghost">Payments CSV</a><Link href="/settings/title" className="btn btn-ghost">Title companies ({titleCos.length})</Link></>} />
       <div className="mb-5 grid grid-cols-2 gap-3 md:grid-cols-4">
         <Stat label="Open closings" value={open.length} />
         <Stat label="Awaiting signature" value={contracts.length} tone={contracts.length ? "warn" : undefined} />
@@ -99,7 +100,7 @@ export default async function Closing({ searchParams }: { searchParams: Promise<
                 const f = k.fields as Record<string, string>;
                 return (
                   <li key={k.id}>
-                    <Link href={`/deals/${k.opportunityId}?tab=contracts`} className="flex items-center justify-between gap-3 px-4 py-3 hover:bg-soft">
+                    <Link href={contractHref(k)} className="flex items-center justify-between gap-3 px-4 py-3 hover:bg-soft">
                       <div>
                         <div className="font-medium">
                           {label(k.kind)} · {f.property_address}

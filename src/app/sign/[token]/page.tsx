@@ -1,4 +1,5 @@
 import { headers } from "next/headers";
+import { db } from "@/lib/db";
 import { ActionButton, ActionForm, Submit } from "@/components/client";
 import { SignaturePad } from "@/components/signature";
 import { setting } from "@/lib/config";
@@ -24,7 +25,9 @@ export default async function SignPage({ params }: { params: Promise<{ token: st
   await recordView(s.id, h.get("x-forwarded-for")?.split(",")[0] || "", h.get("user-agent") || "");
   const company = (await setting(s.contract.workspaceId, "COMPANY_NAME")) || "UltimateCapital";
   const f = s.contract.fields as Record<string, string>;
-  const needsInitials = s.contract.body.includes(`[[initial:${s.role}]]`);
+  const tpl = s.contract.sourcePdf && s.contract.templateId ? await db.contractTemplate.findUnique({ where: { id: s.contract.templateId }, select: { placements: true } }) : null;
+  const placed = ((tpl?.placements || []) as { kind: string; role?: string }[]).filter((p) => p.role === s.role);
+  const needsInitials = s.contract.body.includes(`[[initial:${s.role}]]`) || placed.some((p) => p.kind === "initial");
   const parts = s.contract.body.split(/(\[\[(?:sign|initial):[a-z0-9_]+\]\])/g);
   const closed = ["terminated", "expired", "declined"].includes(s.contract.status) || s.status === "declined";
   const needCode = needsSignCode(s) && !s.otpVerifiedAt;
@@ -32,7 +35,7 @@ export default async function SignPage({ params }: { params: Promise<{ token: st
     <Shell>
       <div className="mb-4">
         <div className="text-sm text-muted">{company}</div>
-        <h1 className="text-xl font-semibold">{f.property_address ? `Agreement for ${f.property_address}` : "Agreement"}</h1>
+        <h1 className="text-xl font-semibold">{s.contract.title || (f.property_address ? `Agreement for ${f.property_address}` : "Agreement")}</h1>
         <p className="text-sm text-muted">
           For {s.name} · please read the full agreement before signing.
         </p>

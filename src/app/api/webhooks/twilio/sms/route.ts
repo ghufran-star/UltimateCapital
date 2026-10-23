@@ -7,6 +7,7 @@ export const dynamic = "force-dynamic";
 export async function POST(req: NextRequest) {
   const { ws, params, ok } = await twilioRequest(req);
   if (!ws || !ok) return new Response("forbidden", { status: 403 });
-  await onInboundSms(ws, { From: params.From, To: params.To, Body: params.Body || "", MessageSid: params.MessageSid });
+  const media = Array.from({ length: Math.min(10, Number(params.NumMedia || 0)) }, (_, i) => ({ url: params[`MediaUrl${i}`], type: params[`MediaContentType${i}`] || "application/octet-stream" })).filter((m) => m.url);
+  await onInboundSms(ws, { From: params.From, To: params.To, Body: params.Body || "", MessageSid: params.MessageSid, media });
   return twiml("<Response/>");
 }

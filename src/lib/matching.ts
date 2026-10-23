@@ -217,11 +217,12 @@ const STEP_GAP_HOURS = [4, 20]; // step 2 four hours after step 1, step 3 twenty
  * Presents a deal to one investor as a short sequence (e.g. text → email → AI call), stopping the moment
  * they respond. The investor's weekly/monthly limits and buying timeline are checked once, before step 1.
  */
-export async function outreachToBuyer(ws: string, opportunityId: string, contactId: string, mode: string, step = 1) {
+export async function outreachToBuyer(ws: string, opportunityId: string, contactId: string, mode: string, step = 1, manual = false) {
   const interest = await db.buyerInterest.findUnique({ where: { opportunityId_contactId: { opportunityId, contactId } } });
   if (!interest) return "No longer a match";
   if (step > 1 && (interest.respondedAt || !["MATCHED", "CONTACT_ELIGIBLE", "PRESENTED"].includes(interest.stage))) return "They responded: sequence stopped";
-  if (step === 1) {
+  // A person picking this investor by hand overrides the weekly/monthly caps (never DNC or opt-outs).
+  if (step === 1 && !manual) {
     const blocked = await canSendDeal(ws, contactId, opportunityId);
     if (blocked) {
       await db.buyerInterest.update({ where: { id: interest.id }, data: { notes: `Not sent: ${blocked}` } });

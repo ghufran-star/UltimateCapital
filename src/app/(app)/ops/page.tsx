@@ -6,6 +6,7 @@ import { pageCtx } from "@/lib/session";
 import { label } from "@/lib/stages";
 import { ago, fmtDate } from "@/lib/util";
 import { createTaskAction, taskAction } from "../../actions/ops";
+import { assignTaskAction } from "../../actions/deals";
 import { sendReplyAction } from "../../actions/autopilot";
 import { InteractionList } from "../deals/[id]/sections";
 
@@ -63,6 +64,7 @@ async function Tasks({ ws, who, writable, userId }: { ws: string; who: string; w
     take: 200,
   });
   const contacts = await db.contact.findMany({ where: { id: { in: tasks.map((t) => t.contactId).filter(Boolean) as string[] } }, select: { id: true, firstName: true, lastName: true, company: true } });
+  const members = await db.membership.findMany({ where: { workspaceId: ws }, include: { user: { select: { id: true, name: true } } } });
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap gap-2 text-sm">
@@ -126,6 +128,23 @@ async function Tasks({ ws, who, writable, userId }: { ws: string; who: string; w
                         <ActionButton action={taskAction} hidden={{ taskId: t.id, what: "cancel" }}>
                           ✕
                         </ActionButton>
+                        <ActionForm action={assignTaskAction} className="flex items-center gap-1">
+                          <input type="hidden" name="taskId" value={t.id} />
+                          <select name="assignee" defaultValue={t.assignee ?? ""} className="rounded-md border border-line bg-card px-1 py-1 text-xs">
+                            <option value="">Unassigned</option>
+                            {members.map((m) => (
+                              <option key={m.userId} value={m.userId}>
+                                {m.user.name}
+                              </option>
+                            ))}
+                            {["seller_acquisition", "property_discovery", "negotiation", "buyer_acquisition", "disposition", "transaction"].map((r) => (
+                              <option key={r} value={`agent:${r}`}>
+                                AI: {r.replace(/_/g, " ")}
+                              </option>
+                            ))}
+                          </select>
+                          <Submit className="btn btn-ghost btn-sm">Assign</Submit>
+                        </ActionForm>
                       </>
                     )}
                   </div>

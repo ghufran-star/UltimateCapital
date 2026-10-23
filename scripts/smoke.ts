@@ -91,12 +91,12 @@ async function main() {
   await db.session.create({ data: { id: sha(demoToken), userId: user.id, workspaceId: ws, expiresAt: new Date(Date.now() + 864e5) } });
   await db.session.create({ data: { id: sha(realToken), userId: user.id, workspaceId: real.id, expiresAt: new Date(Date.now() + 864e5) } });
 
-  const urls: string[] = ["/", "/approvals", "/approvals?tab=done", "/alerts", "/deals/new", "/properties", "/properties?tab=properties", "/properties/import", "/buyers", "/buyers/new", "/buyers/import", "/campaigns", "/campaigns/new", "/closing", "/closing?tab=signatures", "/closing?tab=payments", "/ops", "/ops?tab=tasks", "/ops?tab=tasks&who=ai", "/ops?tab=audit", "/ops?tab=system", "/settings", "/settings/integrations", "/settings/rules", "/settings/states", "/settings/agents", "/settings/templates", "/settings/templates/new", "/settings/phones", "/settings/title", "/settings/team", "/settings/compliance", "/settings/profile", "/settings/controls"];
+  const urls: string[] = ["/", "/approvals", "/approvals?tab=done", "/alerts", "/deals/new", "/properties", "/properties?tab=properties", "/properties/import", "/buyers", "/buyers/new", "/buyers/import", "/campaigns", "/campaigns/new", "/closing", "/closing?tab=signatures", "/closing?tab=payments", "/ops", "/ops?tab=tasks", "/ops?tab=tasks&who=ai", "/ops?tab=audit", "/ops?tab=system", "/settings", "/settings/integrations", "/settings/rules", "/settings/states", "/settings/agents", "/settings/templates", "/settings/templates/new", "/settings/phones", "/settings/title", "/settings/team", "/settings/compliance", "/settings/profile", "/settings/controls", "/dialer"];
   for (const v of ["active", "hot", "contract", "leads", "closed", "all"]) urls.push(`/deals?view=${v}`);
   for (const p of await db.statePack.findMany({ where: { workspaceId: ws } })) urls.push(`/settings/states/${p.state}`);
   for (const a of await db.agent.findMany({ where: { workspaceId: ws } })) urls.push(`/settings/agents/${a.id}`);
   for (const tp of await db.contractTemplate.findMany({ where: { workspaceId: ws } })) urls.push(`/settings/templates/${tp.id}`);
-  for (const d of await db.opportunity.findMany({ where: { workspaceId: ws } })) for (const tab of ["overview", "numbers", "buyers", "contracts", "closing", "activity"]) urls.push(`/deals/${d.id}?tab=${tab}`);
+  for (const d of await db.opportunity.findMany({ where: { workspaceId: ws } })) for (const tab of ["overview", "numbers", "buyers", "contracts", "closing", "files", "activity"]) urls.push(`/deals/${d.id}?tab=${tab}`);
   for (const ct of await db.contact.findMany({ where: { workspaceId: ws } })) urls.push(`/contacts/${ct.id}`);
   for (const cp of await db.campaign.findMany({ where: { workspaceId: ws } })) urls.push(`/campaigns/${cp.id}`);
   for (const k of await db.contract.findMany({ where: { workspaceId: ws, finalPdf: { not: null } }, take: 3 })) urls.push(`/api/contracts/${k.id}/pdf`);

@@ -53,6 +53,8 @@ export async function dialerTick() {
       held.set(c.workspaceId, (await pauseReason(c.workspaceId, {})) || (await spendCapReason(c.workspaceId)));
     }
     if (held.get(c.workspaceId)) continue;
+    // Team-only campaigns are worked from the power dialer; the AI dialer leaves them alone.
+    if (!c.channels.some((ch) => ch === "call" || ch === "sms")) continue;
     const s = { ...DEFAULT_CAMPAIGN, ...((c.settings as Partial<CampaignSettings>) || {}) };
     if (s.budget) {
       const spend = await campaignSpend(c.workspaceId, c.id);

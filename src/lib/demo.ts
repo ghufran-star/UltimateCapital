@@ -12,7 +12,7 @@ import { draftPack, type StatePackData } from "./states";
 // It is view-only and can never contact anyone (guards in comms, the worker and the dialer).
 // Bump DEMO_VERSION whenever the data changes: an outdated or half-built demo rebuilds itself.
 
-const DEMO_VERSION = "3";
+const DEMO_VERSION = "4";
 const DEMO_NAME = "Demo · Sample Wholesaling Co";
 const COMPANY = "Sample Wholesaling Co";
 
@@ -908,6 +908,7 @@ async function seed(ws: string, ownerId: string) {
   campaigns.push({ name: "Columbus vacant homes · September", kind: "seller", state: "OH", market: "Columbus", status: "done", channels: ["call"], objective: "Vacant properties: find out if the owner wants to sell.", members: byState("OH").map((d) => d.sellerId) });
   campaigns.push({ name: "Phoenix high-equity (waiting for AZ pack)", kind: "seller", state: "AZ", market: "Phoenix", status: "draft", channels: ["call"], objective: "High-equity owners 10+ years.", members: deals.filter((d) => d.market.state === "AZ").map((d) => d.sellerId) });
   campaigns.push({ name: "Texas cash buyers: list building", kind: "buyer", state: "TX", market: null, status: "running", channels: ["call", "sms"], objective: "Find active cash buyers and learn their exact buy boxes.", members: buyerRows.filter((b) => b.states.includes("TX")).map((b) => b.id) });
+  campaigns.push({ name: "Dallas cold list · team calls", kind: "seller", state: "TX", market: "Dallas", status: "running", channels: ["human"], objective: "Team calls a skip-traced list (AI calls need consent first); find motivated owners.", members: deals.filter((d) => d.market.city === "Dallas" || (d.market.state === "TX" && !atLeast(d.stage, "ENGAGED"))).map((d) => d.sellerId) });
   for (const d of deals.filter((x) => x.stage === "DISPOSITION")) {
     campaigns.push({ name: `Disposition: ${d.address}`, kind: "disposition", state: d.market.state, market: d.market.city, status: d.tag === "hot" ? "running" : "done", channels: ["sms", "call"], objective: "Market to matching buyers with disclosure; find the best serious offer above the floor.", members: (await db.buyerInterest.findMany({ where: { opportunityId: d.id }, select: { contactId: true } })).map((x) => x.contactId), opp: d.id });
   }
@@ -943,6 +944,31 @@ async function seed(ws: string, ownerId: string) {
       await db.interaction.updateMany({ where: { workspaceId: ws, contactId: { in: uniq }, channel: "call" }, data: { campaignId: camp.id } });
     }
     log(ownerId, `campaign_${c.status === "draft" ? "created" : "running"}`, "campaign", camp.id, ago(between(3, 40)));
+  }
+
+  // The power dialer opens on a contact for the owner.
+  const teamCamp = await db.campaign.findFirst({ where: { workspaceId: ws, channels: { has: "human" } } });
+  if (teamCamp) {
+    const first = await db.campaignMember.findFirst({ where: { campaignId: teamCamp.id, status: { in: ["pending", "retry", "in_progress"] } }, orderBy: { createdAt: "asc" } });
+    if (first) await db.campaignMember.update({ where: { id: first.id }, data: { status: "in_progress", lockedBy: ownerId, lockedAt: new Date() } });
+  }
+
+  // ---------- files: photos on deals, proof of funds on buyers ----------
+  const photo = (room: string, hue: number) =>
+    Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300"><rect width="400" height="300" fill="hsl(${hue},25%,82%)"/><rect x="60" y="120" width="280" height="150" fill="hsl(${hue},20%,65%)"/><polygon points="40,130 200,40 360,130" fill="hsl(${hue},30%,45%)"/><rect x="170" y="190" width="60" height="80" fill="hsl(${hue},15%,35%)"/><text x="200" y="30" text-anchor="middle" font-family="sans-serif" font-size="22" fill="#222">${room} (sample photo)</text></svg>`);
+  const withPhotos = deals.filter((d) => atLeast(d.stage, "PROPERTY_DISCOVERY")).slice(0, 18);
+  for (const [i, d] of withPhotos.entries()) {
+    const rooms = ["Front", "Kitchen", "Roof", "Bathroom", "Back yard"].slice(0, 2 + (i % 4));
+    for (const [j, r] of rooms.entries()) {
+      await db.fileObject.create({ data: { workspaceId: ws, entityType: "opportunity", entityId: d.id, kind: "photo", name: `${r.toLowerCase().replace(" ", "-")}.svg`, mime: "image/svg+xml", size: 600, data: photo(r, (i * 37 + j * 23) % 360), shared: atLeast(d.stage, "UNDER_CONTRACT") && j < 3, uploadedBy: j % 2 ? "agent:property_discovery" : ownerId, createdAt: ago(between(1, 20)) } });
+    }
+    if (atLeast(d.stage, "UNDER_CONTRACT")) {
+      await db.fileObject.create({ data: { workspaceId: ws, entityType: "opportunity", entityId: d.id, kind: "title", name: "title-commitment.txt", mime: "text/plain", size: 120, data: Buffer.from(`SAMPLE title commitment for ${d.address}. Requirements: payoff of first mortgage; release of 2019 mechanic's lien.`), uploadedBy: who("tc"), createdAt: ago(between(1, 10)) } });
+    }
+  }
+  const pofBuyers = await db.contact.findMany({ where: { workspaceId: ws, kind: "buyer", fundsVerified: true }, take: 10 });
+  for (const b of pofBuyers) {
+    await db.fileObject.create({ data: { workspaceId: ws, entityType: "contact", entityId: b.id, kind: "pof", name: "proof-of-funds.txt", mime: "text/plain", size: 90, data: Buffer.from(`SAMPLE proof of funds: ${b.company || b.firstName} · available balance $${between(150, 900)},000 · bank letter dated recently.`), uploadedBy: who("dispo"), createdAt: ago(between(5, 60)) } });
   }
 
   // ---------- live DNC check history ----------

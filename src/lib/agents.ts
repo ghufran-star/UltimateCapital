@@ -230,7 +230,8 @@ export async function syncAgent(ws: string, agentId: string): Promise<string> {
       type: "transfer_call",
       name: "transfer_to_human",
       description: "Transfer to the team when the person is ready to agree terms, insists on a human, or has a question you can't answer.",
-      transfer_destination: { type: "predefined", number: owner.user.phone },
+      // {{transfer_number}} is filled per call: the contact's or deal's assigned rep, else the owner.
+      transfer_destination: { type: "predefined", number: "{{transfer_number}}" },
       transfer_option: { type: "warm_transfer", public_handoff_option: { message: "Connecting you with my manager now." } },
     });
   }
@@ -252,6 +253,16 @@ export async function syncAgent(ws: string, agentId: string): Promise<string> {
   else rid = String((await retell(ws, "POST", "/create-agent", agentBody)).agent_id);
   await db.agent.update({ where: { id: a.id }, data: { retellLlmId: llmId, retellAgentId: rid } });
   return rid;
+}
+
+/** Who a live transfer rings: the assigned rep if they have a phone, otherwise the owner. */
+export async function transferNumber(ws: string, assigneeId?: string | null) {
+  if (assigneeId && !assigneeId.startsWith("agent:")) {
+    const u = await db.user.findUnique({ where: { id: assigneeId } });
+    if (u?.phone) return u.phone;
+  }
+  const owner = await db.membership.findFirst({ where: { workspaceId: ws, role: "owner" }, include: { user: true } });
+  return owner?.user.phone || "";
 }
 
 /** Layer 3 + 5: per-call dynamic variables. */
@@ -322,6 +333,7 @@ export async function buildDynamicVariables(
       .filter(Boolean)
       .join("\n");
   }
+  vars.transfer_number = await transferNumber(ws, opp?.assigneeId || contact.assigneeId);
   vars.opening_line = contact.kind === "buyer" ? `Hi, is this ${vars.first_name}?` : `Hi, is this ${vars.first_name}?`;
   return vars;
 }

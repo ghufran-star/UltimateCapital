@@ -269,7 +269,7 @@ export async function onInboundSms(ws: string, p: { From: string; To: string; Bo
 }
 
 /** Human call: Twilio rings the team member's phone first, then connects the contact. Recorded. */
-export async function bridgeCall(ws: string, userPhone: string, contactId: string, actor: string) {
+export async function bridgeCall(ws: string, userPhone: string, contactId: string, actor: string, opts: { campaignId?: string; opportunityId?: string } = {}) {
   if (await demoGuard(ws)) throw new Error("The demo workspace never places calls.");
   const elig = await checkEligibility(ws, contactId, "human_call");
   if (!elig.ok) throw new Error(elig.reason);
@@ -279,7 +279,7 @@ export async function bridgeCall(ws: string, userPhone: string, contactId: strin
   if (!from) throw new Error("No phone number set up.");
   const base = (await setting(ws, "PUBLIC_URL"))?.replace(/\/$/, "");
   const it = await db.interaction.create({
-    data: { workspaceId: ws, contactId, channel: "call", direction: "outbound", provider: "twilio", status: "in_progress", fromAddr: from.number, toAddr: e164(contact.phone), intel: json({ human: actor }) },
+    data: { workspaceId: ws, contactId, campaignId: opts.campaignId, opportunityId: opts.opportunityId, channel: "call", direction: "outbound", provider: "twilio", status: "in_progress", fromAddr: from.number, toAddr: e164(contact.phone), intel: json({ human: actor }) },
   });
   const twiml = `<Response><Say>Connecting you to ${escapeXml(fullName(contact))}.</Say><Dial callerId="${from.number}" record="record-from-answer-dual"${
     base ? ` recordingStatusCallback="${base}/api/webhooks/twilio/recording?ws=${ws}&amp;it=${it.id}"` : ""

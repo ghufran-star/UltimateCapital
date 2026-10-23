@@ -349,6 +349,8 @@ model CampaignMember {
   nextAttemptAt DateTime?
   lastOutcome   String?
   blockedReason String?
+  lockedBy      String? // team member working this contact in the power dialer
+  lockedAt      DateTime?
   createdAt     DateTime  @default(now())
 
   campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
@@ -803,4 +805,23 @@ model ApprovalLink {
   expiresAt  DateTime
   usedAt     DateTime?
   createdAt  DateTime  @default(now())
+}
+
+// Uploaded documents and photos, stored in Postgres (up to 15 MB each).
+model FileObject {
+  id          String   @id @default(cuid())
+  workspaceId String
+  entityType  String // opportunity | contact | property | transaction | contract
+  entityId    String
+  kind        String   @default("other") // photo | pof | id | title | settlement | contract | other
+  name        String
+  mime        String
+  size        Int
+  data        Bytes
+  shared      Boolean  @default(false) // visible on the investor deal page
+  uploadedBy  String
+  note        String?
+  createdAt   DateTime @default(now())
+
+  @@index([workspaceId, entityType, entityId])
 }

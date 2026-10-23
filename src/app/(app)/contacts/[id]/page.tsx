@@ -10,6 +10,7 @@ import { BUYER_OTHER, BUYER_STATUSES, label } from "@/lib/stages";
 import { ago, fmtDate, fullName, usd } from "@/lib/util";
 import { addNoteAction, callContactAction, consentAction, dncContactAction, emailContactAction, saveBuyBoxAction, textContactAction, updateContactAction } from "../../../actions/records";
 import { InteractionList } from "../../deals/[id]/sections";
+import { FilesPanel } from "@/components/files";
 
 export default async function ContactPage({ params }: { params: Promise<{ id: string }> }) {
   const c = await pageCtx();
@@ -253,6 +254,10 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
               )}
             </Card>
           )}
+
+          <Card title={isBuyer ? "Documents (proof of funds, entity docs)" : "Documents and photos"}>
+            <FilesPanel ws={ws} entityType="contact" entityId={id} writable={writable} />
+          </Card>
 
           <Card title="Conversations" pad={false}>
             {canCall && (

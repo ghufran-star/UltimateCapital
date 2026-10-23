@@ -12,6 +12,7 @@ import { activeRuleSet } from "@/lib/valuation";
 import { verificationPackAction } from "../../../actions/ops";
 import { callContactAction, recordOfferAction, textContactAction, updateDealAction } from "../../../actions/records";
 import { dealInclude } from "./include";
+import { FilesPanel } from "@/components/files";
 import { buyerLadder, contractBasis } from "@/lib/deals";
 import { ActivityTab, BuyersTab, ClosingTab, ContractsTab, NumbersTab } from "./sections";
 
@@ -44,6 +45,7 @@ export default async function DealPage({ params, searchParams }: { params: Promi
     { key: "buyers", label: "Buyers", count: counts.buyers },
     { key: "contracts", label: "Contracts", count: counts.contracts },
     { key: "closing", label: "Closing" },
+    { key: "files", label: "Files" },
     { key: "activity", label: "Activity" },
   ].map((t) => ({ ...t, href: `/deals/${opp.id}?tab=${t.key}` }));
 
@@ -279,6 +281,11 @@ export default async function DealPage({ params, searchParams }: { params: Promi
       {tab === "buyers" && <BuyersTab opp={opp} calc={calc} ladder={ladder} writable={!c.workspace.isDemo && can(c.role, "buyers")} />}
       {tab === "contracts" && <ContractsTab opp={opp} ws={ws} writable={!c.workspace.isDemo && can(c.role, "contracts")} userName={c.user.name} />}
       {tab === "closing" && <ClosingTab opp={opp} ws={ws} writable={!c.workspace.isDemo && can(c.role, "closing")} />}
+      {tab === "files" && (
+        <Card title="Photos and documents">
+          <FilesPanel ws={ws} entityType="opportunity" entityId={opp.id} writable={!c.workspace.isDemo} investorShare />
+        </Card>
+      )}
       {tab === "activity" && <ActivityTab opp={opp} ws={ws} writable={!c.workspace.isDemo} />}
     </div>
   );

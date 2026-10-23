@@ -52,6 +52,7 @@ export function CampaignForm({ camp, agents, kind }: { camp?: Campaign; agents: 
               ["call", "AI calls"],
               ["sms", "Texts"],
               ["email", "Email"],
+              ["human", "Team calls (power dialer)"],
             ].map(([v, l]) => (
               <label key={v} className="flex items-center gap-1">
                 <input type="checkbox" name="channels" value={v} defaultChecked={(camp?.channels || ["call"]).includes(v)} /> {l}

@@ -308,6 +308,11 @@ export function BuyersTab({ opp, calc, ladder, writable }: { opp: Deal; calc: Ca
                           {i.contact.fundsVerified ? "Funds verified" : "Funds unverified"} · {i.contact.dealsClosed} closed · reliability {i.contact.reliability}
                         </div>
                         {reasons.length > 0 && <div className="text-xs text-muted">{reasons.slice(0, 3).join(" · ")}</div>}
+                        {i.portalToken && (
+                          <a href={`/d/${i.portalToken}`} target="_blank" className="text-xs text-brand underline">
+                            Their deal page{i.seqStep ? ` · sequence step ${i.seqStep}/3` : ""}
+                          </a>
+                        )}
                       </td>
                       <td className="tnum">{i.fitScore}</td>
                       <td>

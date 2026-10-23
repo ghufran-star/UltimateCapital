@@ -946,6 +946,10 @@ async function seed(ws: string, ownerId: string) {
     log(ownerId, `campaign_${c.status === "draft" ? "created" : "running"}`, "campaign", camp.id, ago(between(3, 40)));
   }
 
+  // Every presented investor has a private deal page.
+  const presented = await db.buyerInterest.findMany({ where: { opportunity: { workspaceId: ws }, presentedAt: { not: null } }, select: { id: true } });
+  for (const [i, pi] of presented.entries()) await db.buyerInterest.update({ where: { id: pi.id }, data: { portalToken: randomBytes(18).toString("base64url"), seqStep: 1 + (i % 3) } });
+
   // The power dialer opens on a contact for the owner.
   const teamCamp = await db.campaign.findFirst({ where: { workspaceId: ws, channels: { has: "human" } } });
   if (teamCamp) {

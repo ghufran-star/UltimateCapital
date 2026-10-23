@@ -544,6 +544,8 @@ model BuyerInterest {
   priceMentioned Int?
   respondedAt   DateTime?
   presentedAt   DateTime?
+  portalToken   String?   @unique // private deal page link for this investor
+  seqStep       Int       @default(0) // outreach sequence step reached (1 text, 2 email, 3 call)
   notes         String?
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt

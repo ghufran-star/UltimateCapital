@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { audit, json, notify } from "./audit";
 import { db } from "./db";
 import { activePack } from "./eligibility";
@@ -196,13 +197,40 @@ export async function dealTeaser(ws: string, opportunityId: string, mode: string
   return body.replace(/\s+/g, " ").trim();
 }
 
-export async function outreachToBuyer(ws: string, opportunityId: string, contactId: string, mode: string) {
-  const blocked = await canSendDeal(ws, contactId, opportunityId);
-  if (blocked) {
-    await db.buyerInterest.updateMany({ where: { opportunityId, contactId }, data: { notes: `Not sent: ${blocked}` } });
-    return `Skipped: ${blocked}`;
+/** The order an investor is reached in: their preferred channel first, then text, email and an AI call. */
+function sequenceFor(c: { preferredChannel: string | null; phone: string | null; email: string | null }) {
+  const out: string[] = [];
+  const add = (ch: string) => {
+    if (out.includes(ch)) return;
+    if ((ch === "sms" || ch === "call") && !c.phone) return;
+    if (ch === "email" && !c.email) return;
+    out.push(ch);
+  };
+  if (c.preferredChannel) add(c.preferredChannel);
+  ["sms", "email", "call"].forEach(add);
+  return out;
+}
+const STEP_GAP_HOURS = [4, 20]; // step 2 four hours after step 1, step 3 twenty hours after step 2
+
+/**
+ * Presents a deal to one investor as a short sequence (e.g. text → email → AI call), stopping the moment
+ * they respond. The investor's weekly/monthly limits and buying timeline are checked once, before step 1.
+ */
+export async function outreachToBuyer(ws: string, opportunityId: string, contactId: string, mode: string, step = 1) {
+  const interest = await db.buyerInterest.findUnique({ where: { opportunityId_contactId: { opportunityId, contactId } } });
+  if (!interest) return "No longer a match";
+  if (step > 1 && (interest.respondedAt || !["MATCHED", "CONTACT_ELIGIBLE", "PRESENTED"].includes(interest.stage))) return "They responded: sequence stopped";
+  if (step === 1) {
+    const blocked = await canSendDeal(ws, contactId, opportunityId);
+    if (blocked) {
+      await db.buyerInterest.update({ where: { id: interest.id }, data: { notes: `Not sent: ${blocked}` } });
+      return `Skipped: ${blocked}`;
+    }
   }
   const c = await db.contact.findUniqueOrThrow({ where: { id: contactId } });
+  const seq = sequenceFor(c);
+  const channel = seq[step - 1];
+  if (!channel) return "Sequence finished";
   const v = await latestValuation(opportunityId);
   const calc = v && !v.blocked ? (v.result as unknown as Calculation) : undefined;
   let price: number | null = null;
@@ -212,16 +240,36 @@ export async function outreachToBuyer(ws: string, opportunityId: string, contact
     // Before contract this is the presumptive price: the seller's own number plus our round-1 fee.
     price = buyerLadder(contractBasis(opp, calc), calc, await dealParams(ws, opportunityId)).rounds[0] ?? null;
   }
-  const text = await dealTeaser(ws, opportunityId, mode, price);
+  const token = interest.portalToken || randomBytes(18).toString("base64url");
+  if (!interest.portalToken) await db.buyerInterest.update({ where: { id: interest.id }, data: { portalToken: token } });
+  const { setting } = await import("./config");
+  const base = (await setting(ws, "PUBLIC_URL"))?.replace(/\/$/, "");
+  const link = base ? ` See it and reply: ${base}/d/${token}` : "";
+  const text = (await dealTeaser(ws, opportunityId, mode, price)) + link;
   const comms = await import("./comms");
   let r = "";
-  const channel = c.preferredChannel || (c.phone ? "sms" : c.email ? "email" : "call");
-  if (channel === "email" && c.email) r = await comms.sendEmail(ws, { to: c.email, contactId, subject: mode === "anonymous" ? "Off-market lead — would you buy at this number?" : "New deal for you", text, opportunityId });
+  if (channel === "email") r = await comms.sendEmail(ws, { to: c.email!, contactId, subject: mode === "anonymous" ? `Off-market lead ${dealCode(opportunityId)}: would you buy at this number?` : `New deal ${dealCode(opportunityId)} for you`, text, opportunityId });
   else if (channel === "call") r = await comms.placeCall(ws, { contactId, agentRole: "disposition", opportunityId });
   else r = await comms.sendSms(ws, { contactId, body: text, opportunityId });
-  if (r.startsWith("Blocked")) return r;
-  await db.buyerInterest.updateMany({ where: { opportunityId, contactId }, data: { stage: "PRESENTED", presentedAt: new Date() } });
-  if (price) await db.offer.create({ data: { opportunityId, side: "buyer", contactId, round: 1, price, by: "us", authority: "rule" } });
-  await db.contact.update({ where: { id: contactId }, data: { ignoredInRow: { increment: 1 } } });
-  return r;
+  const failed = r.startsWith("Blocked");
+  if (!interest.presentedAt && !failed) {
+    await db.buyerInterest.update({ where: { id: interest.id }, data: { stage: "PRESENTED", presentedAt: new Date() } });
+    if (price) await db.offer.create({ data: { opportunityId, side: "buyer", contactId, round: 1, price, by: "us", authority: "rule" } });
+    await db.contact.update({ where: { id: contactId }, data: { ignoredInRow: { increment: 1 } } });
+  }
+  await db.buyerInterest.update({ where: { id: interest.id }, data: { seqStep: step } });
+  // A blocked channel moves straight on to the next one; otherwise wait for a reply first.
+  if (seq[step]) {
+    await createTask(ws, {
+      kind: "buyer_outreach",
+      title: `Follow up on deal ${dealCode(opportunityId)} by ${seq[step] === "sms" ? "text" : seq[step]}`,
+      entityType: "opportunity",
+      entityId: opportunityId,
+      contactId,
+      payload: { mode, step: step + 1 },
+      dueAt: new Date(Date.now() + (failed ? 60_000 : (STEP_GAP_HOURS[step - 1] ?? 24) * 3600_000)),
+      dedupeKey: `outreach:${opportunityId}:${contactId}:${mode}:${step + 1}`,
+    });
+  }
+  return `${channel}: ${r}`;
 }

@@ -205,7 +205,7 @@ export async function executeTask(t: { id: string; workspaceId: string; kind: st
     case "demand_campaign":
       return (await import("./matching")).startDemandCampaign(ws, t.entityId!, String(p.mode || "anonymous"));
     case "buyer_outreach":
-      return (await import("./matching")).outreachToBuyer(ws, t.entityId!, t.contactId!, String(p.mode || "anonymous"));
+      return (await import("./matching")).outreachToBuyer(ws, t.entityId!, t.contactId!, String(p.mode || "anonymous"), Number(p.step || 1));
     case "call":
       return (await import("./comms")).placeCall(ws, { contactId: t.contactId!, agentRole: String(p.agentRole || "seller_acquisition"), opportunityId: (p.opportunityId as string) || undefined, campaignId: (p.campaignId as string) || undefined, memberId: (p.memberId as string) || undefined });
     case "sms": {

@@ -16,7 +16,7 @@ export const MAX_FILE = 15 * 1024 * 1024;
 export async function saveFile(ws: string, o: { entityType: string; entityId: string; kind: string; name: string; mime: string; data: Buffer; uploadedBy: string; shared?: boolean; note?: string | null }) {
   if (o.data.length > MAX_FILE) throw new Error("Files can be up to 15 MB.");
   const f = await db.fileObject.create({
-    data: { workspaceId: ws, entityType: o.entityType, entityId: o.entityId, kind: o.kind, name: o.name.slice(0, 200), mime: o.mime || "application/octet-stream", size: o.data.length, data: o.data, uploadedBy: o.uploadedBy, shared: !!o.shared, note: o.note || null },
+    data: { workspaceId: ws, entityType: o.entityType, entityId: o.entityId, kind: o.kind, name: o.name.slice(0, 200), mime: o.mime || "application/octet-stream", size: o.data.length, data: new Uint8Array(o.data), uploadedBy: o.uploadedBy, shared: !!o.shared, note: o.note || null },
     select: { id: true },
   });
   await audit(ws, o.uploadedBy, "file_uploaded", { type: o.entityType, id: o.entityId }, { meta: { fileId: f.id, name: o.name, kind: o.kind } });

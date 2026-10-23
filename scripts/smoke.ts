@@ -109,7 +109,8 @@ async function main() {
   writeFileSync("smoke-demo-cookie.txt", demoToken);
   writeFileSync("smoke-real-cookie.txt", realToken);
   writeFileSync("smoke-urls.txt", urls.join("\n") + "\n");
-  writeFileSync("smoke-public-urls.txt", [`/sign/${signToken}`, "/sign/expired-token", "/login", "/api/health"].join("\n") + "\n");
+  const portal = await db.buyerInterest.findMany({ where: { portalToken: { not: null }, opportunity: { workspaceId: ws } }, take: 4, select: { portalToken: true } });
+  writeFileSync("smoke-public-urls.txt", [...portal.map((x) => `/d/${x.portalToken}`), "/d/not-a-real-token-xxxxxxx", "/a/expired-token-xxxxxxxx", `/sign/${signToken}`, "/sign/expired-token", "/login", "/api/health"].join("\n") + "\n");
   console.log(`${urls.length} pages to crawl`);
   await db.$disconnect();
 }

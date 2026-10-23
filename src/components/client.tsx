@@ -87,7 +87,14 @@ export function ActionButton({
 export function RowLink({ href, children }: { href: string; children: React.ReactNode }) {
   const router = useRouter();
   return (
-    <tr className="link" onClick={() => router.push(href)}>
+    <tr
+      className="link"
+      onClick={(e) => {
+        // Checkboxes, buttons and links inside the row do their own thing.
+        if ((e.target as HTMLElement).closest("a,button,input,select,label,textarea,form,[data-stop]")) return;
+        router.push(href);
+      }}
+    >
       {children}
     </tr>
   );

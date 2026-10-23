@@ -24,7 +24,7 @@ export default async function Closing({ searchParams }: { searchParams: Promise<
   const writable = !c.workspace.isDemo && can(c.role, "closing");
   return (
     <div>
-      <PageHeader title="Contracts & closing" sub="E-signature, title, earnest money, closing and getting paid." actions={<Link href="/settings/title" className="btn btn-ghost">Title companies ({titleCos.length})</Link>} />
+      <PageHeader title="Contracts & closing" sub="E-signature, title, earnest money, closing and getting paid." actions={<><a href="/api/export/payments" className="btn btn-ghost">Payments CSV</a><Link href="/settings/title" className="btn btn-ghost">Title companies ({titleCos.length})</Link></>} />
       <div className="mb-5 grid grid-cols-2 gap-3 md:grid-cols-4">
         <Stat label="Open closings" value={open.length} />
         <Stat label="Awaiting signature" value={contracts.length} tone={contracts.length ? "warn" : undefined} />

@@ -13,6 +13,7 @@ import { SELLER_EXCEPTIONS, SELLER_STAGES, label } from "@/lib/stages";
 import { ago, fmtDate, fullName, usd } from "@/lib/util";
 import { activeRuleSet } from "@/lib/valuation";
 import { verificationPackAction } from "../../../actions/ops";
+import { makeOfferAction } from "../../../actions/deals";
 import { callContactAction, recordOfferAction, textContactAction, updateDealAction } from "../../../actions/records";
 import { dealInclude } from "./include";
 import { FilesPanel } from "@/components/files";
@@ -149,6 +150,41 @@ export default async function DealPage({ params, searchParams }: { params: Promi
                 </Notice>
               )}
             </Card>
+
+            {writable && seller && (
+              <section id="make-offer" className="scroll-mt-20">
+                <Card title="Make an offer">
+                  <ActionForm action={makeOfferAction} resetOnOk>
+                    <input type="hidden" name="opportunityId" value={opp.id} />
+                    <div className="grid gap-3 md:grid-cols-2">
+                      <L label="Offer price">
+                        <input name="price" className="field tnum" inputMode="numeric" placeholder={calc ? String(calc.sellerOffers[0]) : ""} />
+                      </L>
+                      <div className="text-xs text-muted md:pt-7">
+                        {calc ? `Your rules: 1st ${usd(calc.sellerOffers[0])}, 2nd ${usd(calc.sellerOffers[1] ?? calc.maxBuy)}, max buy ${usd(calc.maxBuy)} (locked).` : "No valuation yet: the price isn't checked against your rules."}
+                      </div>
+                    </div>
+                    <L label="Message (optional: a default is written for you)">
+                      <textarea name="message" rows={3} className="field" placeholder={`Hi ${seller.firstName || "there"}, following up on ${opp.property.address}: we can offer {{price}} cash, as-is…`} />
+                    </L>
+                    <div className="flex flex-wrap gap-4 text-sm">
+                      <label className="flex items-center gap-1">
+                        <input type="checkbox" name="send" value="sms" defaultChecked={!!seller.phone} /> Send by text
+                      </label>
+                      <label className="flex items-center gap-1">
+                        <input type="checkbox" name="send" value="email" defaultChecked={!!seller.email} /> Send by email
+                      </label>
+                      {["owner", "admin"].includes(c.role) && (
+                        <label className="flex items-center gap-1 text-warn">
+                          <input type="checkbox" name="confirmOver" /> I'm overriding the max buy
+                        </label>
+                      )}
+                    </div>
+                    <Submit>Record and send offer</Submit>
+                  </ActionForm>
+                </Card>
+              </section>
+            )}
 
             <Card title="Deal details">
               <ActionForm action={updateDealAction}>

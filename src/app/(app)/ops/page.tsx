@@ -27,7 +27,7 @@ export default async function Ops({ searchParams }: { searchParams: Promise<{ ta
   return (
     <div>
       <AutoRefresh seconds={30} />
-      <PageHeader title="AI operations" sub="What the agents did, what's queued, and the full audit trail." />
+      <PageHeader title="AI operations" sub="What the agents did, what's queued, and the full audit trail." actions={<><a href="/api/export/calls" className="btn btn-ghost">Calls CSV</a><a href="/api/export/messages" className="btn btn-ghost">Texts &amp; emails CSV</a><a href="/api/export/tasks" className="btn btn-ghost">Tasks CSV</a><a href="/api/export/audit" className="btn btn-ghost">Audit CSV</a></>} />
       <div className="mb-5 grid grid-cols-2 gap-3 md:grid-cols-4">
         <Stat label="Calls (24h)" value={calls} />
         <Stat label="Texts (24h)" value={texts} />

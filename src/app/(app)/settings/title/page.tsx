@@ -50,7 +50,7 @@ export default async function TitleCos() {
   const ro = c.workspace.isDemo || !can(c.role, "closing");
   return (
     <div className="max-w-4xl space-y-5">
-      <PageHeader back={{ href: "/settings", label: "Settings" }} title="Title companies" sub="Where contract packages are sent; replies come back to each deal's inbox." />
+      <PageHeader back={{ href: "/settings", label: "Settings" }} title="Title companies" sub="Where contract packages are sent; replies come back to each deal's inbox." actions={<a href="/api/export/title-companies" className="btn btn-ghost">Export CSV</a>} />
       {ts.map((t) => (
         <Card key={t.id} title={t.name}>
           <TitleForm t={t} ro={ro} />

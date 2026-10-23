@@ -35,7 +35,7 @@ export const STANDARD_FIELDS = [
   "disclosure_text",
 ];
 
-const sha = (s: string | Buffer) => createHash("sha256").update(s).digest("hex");
+const sha = (s: string | Uint8Array) => createHash("sha256").update(s).digest("hex");
 
 export async function contractFields(ws: string, opportunityId: string, kind: string, extra: Record<string, string> = {}) {
   const opp = await db.opportunity.findUniqueOrThrow({ where: { id: opportunityId }, include: { property: { include: { ownerships: { include: { contact: true } } } }, transaction: { include: { titleCompany: true } } } });

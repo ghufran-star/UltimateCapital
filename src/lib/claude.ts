@@ -3,7 +3,7 @@ import { setting } from "./config";
 // Minimal Claude Messages API client (fetch), keyed per workspace.
 
 const API_URL = "https://api.anthropic.com/v1/messages";
-type Block = { type: string; text?: string; input?: unknown; [k: string]: unknown };
+type Block = { type: string; text?: string; name?: string; input?: unknown; [k: string]: unknown };
 type Message = { role: "user" | "assistant"; content: string };
 
 export async function hasClaude(ws: string) {
@@ -55,6 +55,42 @@ const docBlock = (d: Doc) =>
     ? { type: "document", source: { type: "base64", media_type: "application/pdf", data: d.data }, ...(d.name ? { title: d.name } : {}) }
     : { type: "image", source: { type: "base64", media_type: d.mime, data: d.data } };
 
+// Some models reject a forced tool choice ("tool_choice: type tool and any are not supported").
+// For those we ask for the same tool without forcing it, and fall back to JSON in the text.
+const noForcedTool = new Set<string>();
+const FORCE_HINT = 'Reply only by calling the "answer" tool once, with the complete answer.';
+
+function jsonFromText(text: string): unknown {
+  const fenced = /```(?:json)?\s*([\s\S]*?)```/.exec(text);
+  const raw = fenced ? fenced[1] : text.slice(text.indexOf("{"), text.lastIndexOf("}") + 1);
+  try {
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+async function structured(body: Record<string, unknown>, run: (b: Record<string, unknown>) => Promise<{ content: Block[] }>, model: string) {
+  let out: { content: Block[] } | null = null;
+  if (!noForcedTool.has(model)) {
+    try {
+      out = await run(body);
+    } catch (e) {
+      if (!/tool_choice/i.test(e instanceof Error ? e.message : String(e))) throw e;
+      noForcedTool.add(model);
+    }
+  }
+  if (!out) {
+    const sys = typeof body.system === "string" && body.system ? `${body.system}\n\n${FORCE_HINT}` : FORCE_HINT;
+    out = await run({ ...body, tool_choice: { type: "auto" }, system: sys });
+  }
+  const tool = out.content.find((b) => b.type === "tool_use" && b.name === "answer") || out.content.find((b) => b.type === "tool_use");
+  if (tool) return tool.input;
+  const parsed = jsonFromText(out.content.filter((b) => b.type === "text").map((b) => b.text || "").join(""));
+  if (parsed) return parsed;
+  throw new Error("Claude returned no structured answer");
+}
+
 /** Structured output via a forced tool. */
 export async function claudeJson<T>(
   ws: string,
@@ -69,8 +105,5 @@ export async function claudeJson<T>(
     tool_choice: { type: "tool", name: "answer" },
   };
   if (opts.system) body.system = opts.system;
-  const out = await call(ws, body);
-  const t = out.content.find((b) => b.type === "tool_use");
-  if (!t) throw new Error("Claude returned no structured answer");
-  return t.input as T;
+  return (await structured(body, (b) => call(ws, b), String(body.model))) as T;
 }

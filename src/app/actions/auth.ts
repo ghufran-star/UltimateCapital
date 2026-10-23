@@ -84,7 +84,14 @@ export async function registerAction(_: ActionState, fd: FormData): Promise<Acti
 
 export async function switchWorkspaceAction(_: ActionState, fd: FormData): Promise<ActionState> {
   return act(async () => {
-    if (!(await switchWorkspace(String(fd.get("workspaceId"))))) throw new Error("Not a member of that workspace.");
+    let id = String(fd.get("workspaceId"));
+    const target = await db.workspace.findUnique({ where: { id }, select: { isDemo: true } });
+    if (target?.isDemo) {
+      // Entering the demo always goes through the builder, so an old or half-built demo is rebuilt first.
+      const c = await requireCtx();
+      id = (await ensureDemoWorkspace(c.user.id)).id;
+    }
+    if (!(await switchWorkspace(id))) throw new Error("Not a member of that workspace.");
     return { ok: true, redirect: "/" };
   });
 }

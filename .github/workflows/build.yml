@@ -6,6 +6,18 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: pg
+          POSTGRES_DB: uc
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgresql://postgres:pg@localhost:5432/uc
+      SETTINGS_SECRET: ci-secret
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -14,3 +26,16 @@ jobs:
       - run: npm install --no-audit --no-fund
       - run: npx tsc --noEmit
       - run: npm run build
+      - name: Create database
+        run: npx prisma db push --skip-generate
+      - name: Build demo and test compliance rules
+        run: npx --yes tsx scripts/smoke.ts
+      - name: Start app
+        run: |
+          RUN_WORKER=false nohup npx next start -p 3000 > server.log 2>&1 &
+          for i in $(seq 1 60); do curl -sf localhost:3000/api/health && break; sleep 1; done
+      - name: Crawl every page
+        run: bash scripts/crawl.sh
+      - name: Server log on failure
+        if: failure()
+        run: tail -n 200 server.log || true

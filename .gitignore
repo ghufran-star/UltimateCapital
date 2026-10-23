@@ -8,3 +8,5 @@ out
 next-env.d.ts
 .vercel
 .DS_Store
+smoke-*.txt
+server.log

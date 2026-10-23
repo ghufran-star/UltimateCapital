@@ -200,6 +200,13 @@ export async function decideApproval(ws: string, approvalId: string, decision: "
   await db.approval.update({ where: { id: ap.id }, data: { status: decision, decidedBy: userId, decidedAt: new Date(), note } });
   await audit(ws, userId, `approval_${decision}`, { type: ap.entityType, id: ap.entityId }, { meta: { kind: ap.kind, note, price } });
   const d = (ap.detail || {}) as Record<string, unknown>;
+  // Close the loop: a decision on something the negotiator asked for books the call that delivers it.
+  if (["agent_request", "offer_over_limit"].includes(ap.kind) && ap.entityType === "opportunity" && ap.requestedBy !== "agent:disposition") {
+    const o = await db.opportunity.findUnique({ where: { id: ap.entityId } });
+    if (o?.sellerId) {
+      await createTask(ws, { kind: "call", title: decision === "approved" ? "Deliver the approved offer to the seller" : "Tell the seller where we landed", reason: note || undefined, contactId: o.sellerId, entityType: "opportunity", entityId: o.id, assignee: "agent:negotiation", priority: 1, dueAt: new Date(Date.now() + 10 * 60_000), payload: { agentRole: "negotiation", opportunityId: o.id, fallbackToTeam: true }, dedupeKey: `approvalcall:${ap.id}` });
+    }
+  }
   if (decision === "rejected") {
     if (ap.entityType === "opportunity") await db.opportunity.update({ where: { id: ap.entityId }, data: { exception: null } }).catch(() => null);
     return;

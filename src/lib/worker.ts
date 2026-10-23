@@ -47,6 +47,7 @@ export function startWorker() {
         if (Date.now() - lastDigest > 10 * 60_000) {
           lastDigest = Date.now();
           await (await import("./digest")).digestTick();
+          worked += await (await import("./autopilot")).autopilotTick();
         }
       } catch (err) {
         console.error("[worker]", err instanceof Error ? err.message : err);

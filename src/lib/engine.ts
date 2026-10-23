@@ -92,6 +92,7 @@ export const AUTO_TASKS = new Set([
   "send_contract",
   "dnc_scrub",
   "contract_reminder",
+  "ai_reply",
 ]);
 
 // ---------- Event handlers ----------
@@ -109,6 +110,11 @@ export async function handleEvent(e: { id: string; workspaceId: string; type: st
           entityId: e.entityId,
           dedupeKey: `intel:${e.entityId}`,
         });
+        const it = await db.interaction.findUnique({ where: { id: e.entityId }, select: { direction: true, channel: true, contactId: true } });
+        if (it?.direction === "inbound" && it.contactId && ["sms", "email"].includes(it.channel)) {
+          // Reply after the conversation has been read, so the reply knows what was just learned.
+          await createTask(ws, { kind: "ai_reply", title: "Answer the message", entityType: "interaction", entityId: e.entityId, contactId: it.contactId, dueAt: new Date(Date.now() + 90_000), dedupeKey: `aireply:${e.entityId}` });
+        }
       }
       break;
     case "contact.opt_out": {
@@ -189,7 +195,7 @@ export async function runEvents(limit = 25) {
 
 // ---------- Task execution ----------
 
-export async function executeTask(t: { id: string; workspaceId: string; kind: string; entityId: string | null; contactId: string | null; payload: unknown; attempts: number }) {
+export async function executeTask(t: { id: string; workspaceId: string; kind: string; title: string; entityType: string | null; entityId: string | null; contactId: string | null; payload: unknown; attempts: number }) {
   const ws = t.workspaceId;
   const p = (t.payload || {}) as Record<string, unknown>;
   switch (t.kind) {
@@ -207,8 +213,16 @@ export async function executeTask(t: { id: string; workspaceId: string; kind: st
       return (await import("./matching")).startDemandCampaign(ws, t.entityId!, String(p.mode || "anonymous"));
     case "buyer_outreach":
       return (await import("./matching")).outreachToBuyer(ws, t.entityId!, t.contactId!, String(p.mode || "anonymous"), Number(p.step || 1));
-    case "call":
-      return (await import("./comms")).placeCall(ws, { contactId: t.contactId!, agentRole: String(p.agentRole || "seller_acquisition"), opportunityId: (p.opportunityId as string) || undefined, campaignId: (p.campaignId as string) || undefined, memberId: (p.memberId as string) || undefined });
+    case "call": {
+      const r = await (await import("./comms")).placeCall(ws, { contactId: t.contactId!, agentRole: String(p.agentRole || "seller_acquisition"), opportunityId: (p.opportunityId as string) || undefined, campaignId: (p.campaignId as string) || undefined, memberId: (p.memberId as string) || undefined });
+      // Autopilot steps the AI may not do (e.g. no AI-voice consent) go to a person instead of being dropped.
+      if (p.fallbackToTeam && r.startsWith("Blocked") && !/do not contact|opted out|litigator|invalid|suppress/i.test(r)) {
+        const opp = p.opportunityId ? await db.opportunity.findUnique({ where: { id: String(p.opportunityId) } }) : null;
+        await createTask(ws, { kind: "follow_up", title: `${t.title.replace(/^Autopilot: /, "")} (call by a person)`, reason: r, contactId: t.contactId!, entityType: t.entityType || undefined, entityId: t.entityId || undefined, assignee: opp?.assigneeId || undefined, priority: 1, dedupeKey: `team:${t.id}` });
+        return `${r} → handed to the team`;
+      }
+      return r;
+    }
     case "sms": {
       const r = await (await import("./comms")).sendSms(ws, { contactId: t.contactId!, body: String(p.body || ""), opportunityId: (p.opportunityId as string) || undefined, memberId: (p.memberId as string) || undefined, campaignId: (p.campaignId as string) || undefined });
       if (p.memberId && !r.startsWith("Rescheduled")) {
@@ -225,6 +239,8 @@ export async function executeTask(t: { id: string; workspaceId: string; kind: st
       return (await import("./contracts")).deadlineReminder(ws, t.entityId!, String(p.which || ""));
     case "send_contract":
       return (await import("./contracts")).sendForSignature(ws, t.entityId!, "system");
+    case "ai_reply":
+      return (await import("./replies")).replyToInbound(ws, t.entityId!);
     case "contract_reminder":
       return (await import("./contracts")).signingReminder(ws, t.entityId!);
     case "dnc_scrub":

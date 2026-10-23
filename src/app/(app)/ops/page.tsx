@@ -6,6 +6,7 @@ import { pageCtx } from "@/lib/session";
 import { label } from "@/lib/stages";
 import { ago, fmtDate } from "@/lib/util";
 import { createTaskAction, taskAction } from "../../actions/ops";
+import { sendReplyAction } from "../../actions/autopilot";
 import { InteractionList } from "../deals/[id]/sections";
 
 export default async function Ops({ searchParams }: { searchParams: Promise<{ tab?: string; who?: string }> }) {
@@ -103,6 +104,13 @@ async function Tasks({ ws, who, writable, userId }: { ws: string; who: string; w
                       {t.attempts > 0 ? ` · ${t.attempts} attempts` : ""}
                     </div>
                     {t.reason && <div className="text-xs text-muted">{t.reason}</div>}
+                    {t.kind === "reply_review" && t.status === "open" && writable && (
+                      <ActionForm action={sendReplyAction} className="mt-2 flex flex-wrap items-end gap-2">
+                        <input type="hidden" name="taskId" value={t.id} />
+                        <textarea name="text" rows={2} defaultValue={String(((t.payload || {}) as { text?: string }).text || "")} className="field min-w-64 flex-1" />
+                        <Submit className="btn btn-primary btn-sm">Send</Submit>
+                      </ActionForm>
+                    )}
                     {t.result && <div className="text-xs text-warn">{t.result}</div>}
                   </div>
                   <div className="flex items-center gap-1">

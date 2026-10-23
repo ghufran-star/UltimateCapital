@@ -1009,6 +1009,17 @@ async function seed(ws: string, ownerId: string) {
   t({ kind: "valuation", title: "Recalculate valuation", status: "done", result: "Max buy $121,400", dueAt: ago(0, 6) });
   t({ kind: "email", title: "Send deal package to Lone Star Title", status: "failed", attempts: 3, result: "Email failed (422): The from address domain is not verified (sample)", dueAt: ago(3) });
   t({ kind: "follow_up", title: "We promised: send the seller a copy of the comps", status: "done", result: "Completed by Omar Haddad", dueAt: ago(4) });
+  // Suggested replies waiting for one click, autopilot steps, a stuck deal and a hand-off.
+  const eng = deals.filter((d) => d.stage === "ENGAGED").slice(0, 2);
+  for (const [i, d] of eng.entries()) {
+    t({ kind: "reply_review", title: `Suggested reply to ${d.sellerName}`, reason: i ? "They asked how the process works" : "They asked whether we'd wait until after the holidays", contactId: d.sellerId, entityType: "opportunity", entityId: d.id, channel: "sms", priority: 2, dueAt: ago(0, 1), payload: json({ channel: "sms", text: i ? "Happy to explain! We buy as-is for cash, you pick the closing date, and there are no agent fees. What would be a good time for a quick call this week?" : "Of course, no rush at all. Would mid-January suit you better? I can check in then." }) });
+  }
+  const qual = deals.find((d) => d.stage === "QUALIFIED");
+  if (qual) t({ kind: "call", title: "Autopilot: Property discovery call after qualifying", reason: "Deal in qualified since yesterday", contactId: qual.sellerId, entityType: "opportunity", entityId: qual.id, assignee: "agent:property_discovery", dueAt: ahead(0, 2), payload: json({ agentRole: "property_discovery", opportunityId: qual.id, fallbackToTeam: true }) });
+  const stuck = deals.find((d) => d.stage === "NEGOTIATION" && d.tag === "far");
+  if (stuck) t({ kind: "review", title: `Stuck: ${stuck.address} has been in negotiation 16 days`, entityType: "opportunity", entityId: stuck.id, assignee: who("acq"), priority: 1, dueAt: ago(0, 2) });
+  const handoff = deals.find((d) => d.stage === "OFFER_READY");
+  if (handoff) t({ kind: "follow_up", title: `Reply needed: ${handoff.sellerName} (asked what our offer is)`, contactId: handoff.sellerId, entityType: "opportunity", entityId: handoff.id, assignee: who("acq"), priority: 1, dueAt: ago(0, 3) });
   await db.task.createMany({ data: tasks });
 
   // ---------- notifications ----------

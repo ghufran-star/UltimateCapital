@@ -41,3 +41,17 @@ jobs:
         run: |
           tail -n 200 server.log || true
           grep -iE "error|prisma" server.log | sort | uniq -c | sort -rn | head -20 | while read -r l; do echo "::error title=server log::$l"; done
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the Railway image
+        run: |
+          set -o pipefail
+          docker build --progress=plain -t uc . 2>&1 | tee build.log || { grep -iE "error|ERR!|failed" build.log | tail -15 | while read -r l; do echo "::error title=docker build::$l"; done; exit 1; }
+      - name: Start the image and check health
+        run: |
+          docker run -d --name uc -p 3000:3000 -e PORT=3000 uc
+          for i in $(seq 1 60); do curl -sf localhost:3000/api/health && exit 0; sleep 2; done
+          docker logs uc 2>&1 | tail -15 | while read -r l; do echo "::error title=container::$l"; done; exit 1
+

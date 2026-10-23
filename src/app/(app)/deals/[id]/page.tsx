@@ -5,13 +5,14 @@ import { Card, HotBadge, KV, Notice, PageHeader, StatusBadge, Tabs } from "@/com
 import { db } from "@/lib/db";
 import { activePack } from "@/lib/eligibility";
 import { nearAgreement, resolveParams, type Calculation } from "@/lib/rules";
-import { can, pageCtx } from "@/lib/session";
+import { can, dealScope, pageCtx } from "@/lib/session";
 import { SELLER_EXCEPTIONS, SELLER_STAGES, label } from "@/lib/stages";
 import { ago, fmtDate, fullName, usd } from "@/lib/util";
 import { activeRuleSet } from "@/lib/valuation";
 import { verificationPackAction } from "../../../actions/ops";
 import { callContactAction, recordOfferAction, textContactAction, updateDealAction } from "../../../actions/records";
 import { dealInclude } from "./include";
+import { buyerLadder, contractBasis } from "@/lib/deals";
 import { ActivityTab, BuyersTab, ClosingTab, ContractsTab, NumbersTab } from "./sections";
 
 export default async function DealPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ tab?: string }> }) {
@@ -20,7 +21,7 @@ export default async function DealPage({ params, searchParams }: { params: Promi
   const tab = (await searchParams).tab || "overview";
   const ws = c.workspace.id;
   const opp = await db.opportunity.findFirst({
-    where: { id, workspaceId: ws },
+    where: { id, workspaceId: ws, ...dealScope(c) },
     include: dealInclude,
   });
   if (!opp) notFound();
@@ -30,6 +31,7 @@ export default async function DealPage({ params, searchParams }: { params: Promi
   const rs = await activeRuleSet(ws);
   const { params: rp } = resolveParams(rs.data, { state: opp.property.state, market: opp.property.city, zip: opp.property.zip, propertyType: opp.property.propertyType, dealType: opp.dealType, exit: opp.exitStrategy, conditionTier: opp.property.conditionTier, occupancy: opp.property.occupancy, titleFlags: opp.property.titleFlags, arv: calc?.arv });
   const near = calc ? nearAgreement(opp.sellerLowest, calc.maxBuy, rp) : false;
+  const ladder = calc ? buyerLadder(contractBasis(opp, calc), calc, rp) : null;
   const pack = await activePack(ws, opp.property.state);
   const pendingApprovals = await db.approval.findMany({ where: { workspaceId: ws, entityId: opp.id, status: "pending" } });
   const writable = !c.workspace.isDemo && can(c.role, "deals");
@@ -274,7 +276,7 @@ export default async function DealPage({ params, searchParams }: { params: Promi
       )}
 
       {tab === "numbers" && <NumbersTab opp={opp} v={v} calc={calc} params={rp} writable={writable} playbook={rs.data.playbook} />}
-      {tab === "buyers" && <BuyersTab opp={opp} calc={calc} writable={!c.workspace.isDemo && can(c.role, "buyers")} />}
+      {tab === "buyers" && <BuyersTab opp={opp} calc={calc} ladder={ladder} writable={!c.workspace.isDemo && can(c.role, "buyers")} />}
       {tab === "contracts" && <ContractsTab opp={opp} ws={ws} writable={!c.workspace.isDemo && can(c.role, "contracts")} userName={c.user.name} />}
       {tab === "closing" && <ClosingTab opp={opp} ws={ws} writable={!c.workspace.isDemo && can(c.role, "closing")} />}
       {tab === "activity" && <ActivityTab opp={opp} ws={ws} writable={!c.workspace.isDemo} />}

@@ -8,7 +8,7 @@ import { contractFields, countersign, createContract, sendForSignature, terminat
 import { db } from "@/lib/db";
 import { decideApproval, sendVerificationPack } from "@/lib/deals";
 import { emit, executeTask } from "@/lib/engine";
-import { requireCtx } from "@/lib/session";
+import { assertDeal, requireCtx } from "@/lib/session";
 import { checkSettlement, ensureTransaction, openTitle, reconcileBankCsv, setChecklist } from "@/lib/title";
 import { e164, int, list, str } from "@/lib/util";
 import { act } from "./util";
@@ -19,7 +19,7 @@ export async function decideApprovalAction(_: ActionState, fd: FormData): Promis
   return act(async () => {
     const c = await requireCtx("approve", { write: true });
     const decision = fd.get("decision") === "approved" ? "approved" : "rejected";
-    await decideApproval(c.workspace.id, String(fd.get("approvalId")), decision, c.user.id, str(fd.get("note")) || undefined, int(fd.get("price")));
+    await decideApproval(c.workspace.id, String(fd.get("approvalId")), decision, c.user.id, str(fd.get("note")) || undefined, int(fd.get("price")), fd.get("overLock") === "on");
     return { ok: true, message: decision === "approved" ? "Approved" : "Rejected" };
   });
 }
@@ -28,7 +28,7 @@ export async function verificationPackAction(_: ActionState, fd: FormData): Prom
   return act(async () => {
     const c = await requireCtx("deals", { write: true });
     const id = String(fd.get("opportunityId"));
-    await db.opportunity.findFirstOrThrow({ where: { id, workspaceId: c.workspace.id } });
+    await assertDeal(c, id);
     await sendVerificationPack(c.workspace.id, id);
     return { ok: true, message: "Verification pack sent for approval" };
   });
@@ -41,7 +41,8 @@ export async function createContractAction(_: ActionState, fd: FormData): Promis
     const c = await requireCtx("contracts", { write: true });
     const ws = c.workspace.id;
     const opportunityId = String(fd.get("opportunityId"));
-    const opp = await db.opportunity.findFirstOrThrow({ where: { id: opportunityId, workspaceId: ws }, include: { property: { include: { ownerships: { include: { contact: true } } } } } });
+    await assertDeal(c, opportunityId);
+    const opp = await db.opportunity.findFirstOrThrow({ where: { id: opportunityId, workspaceId: c.workspace.id }, include: { property: { include: { ownerships: { include: { contact: true } } } } } });
     const t = await db.contractTemplate.findFirstOrThrow({ where: { id: String(fd.get("templateId")), workspaceId: ws } });
     if (t.kind === "seller_purchase" && !opp.approvedAt) throw new Error("The owner must approve the final offer before a seller contract can go out (Approvals).");
     const fields = await contractFields(ws, opportunityId, t.kind);
@@ -108,7 +109,7 @@ export async function openTitleAction(_: ActionState, fd: FormData): Promise<Act
   return act(async () => {
     const c = await requireCtx("closing", { write: true });
     const id = String(fd.get("opportunityId"));
-    await db.opportunity.findFirstOrThrow({ where: { id, workspaceId: c.workspace.id } });
+    await assertDeal(c, id);
     const msg = await openTitle(c.workspace.id, id, String(fd.get("titleCompanyId")), c.user.id);
     return { ok: true, message: typeof msg === "string" ? msg : "Package sent to title" };
   });
@@ -127,7 +128,7 @@ export async function transactionAction(_: ActionState, fd: FormData): Promise<A
   return act(async () => {
     const c = await requireCtx("closing", { write: true });
     const opportunityId = String(fd.get("opportunityId"));
-    await db.opportunity.findFirstOrThrow({ where: { id: opportunityId, workspaceId: c.workspace.id } });
+    await assertDeal(c, opportunityId);
     const tx = await ensureTransaction(c.workspace.id, opportunityId);
     const closing = str(fd.get("closingAt"));
     await db.transaction.update({ where: { id: tx.id }, data: { titleCompanyId: str(fd.get("titleCompanyId")) || tx.titleCompanyId, closingAt: closing ? new Date(closing) : tx.closingAt, assignmentFee: int(fd.get("assignmentFee")) ?? tx.assignmentFee, emdAmount: int(fd.get("emdAmount")) ?? tx.emdAmount } });

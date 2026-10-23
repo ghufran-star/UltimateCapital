@@ -180,6 +180,7 @@ export async function runEvents(limit = 25) {
     } catch (err) {
       console.error("[event]", e.type, err);
       await db.event.update({ where: { id: e.id }, data: { handledAt: new Date(), error: String(err).slice(0, 500) } });
+      await (await import("./digest")).alertFailure(e.workspaceId, `Automation error: ${e.type}`, String(err)).catch(() => null);
     }
   }
   return events.length;
@@ -208,8 +209,8 @@ export async function executeTask(t: { id: string; workspaceId: string; kind: st
     case "call":
       return (await import("./comms")).placeCall(ws, { contactId: t.contactId!, agentRole: String(p.agentRole || "seller_acquisition"), opportunityId: (p.opportunityId as string) || undefined, campaignId: (p.campaignId as string) || undefined, memberId: (p.memberId as string) || undefined });
     case "sms": {
-      const r = await (await import("./comms")).sendSms(ws, { contactId: t.contactId!, body: String(p.body || ""), opportunityId: (p.opportunityId as string) || undefined });
-      if (p.memberId) {
+      const r = await (await import("./comms")).sendSms(ws, { contactId: t.contactId!, body: String(p.body || ""), opportunityId: (p.opportunityId as string) || undefined, memberId: (p.memberId as string) || undefined, campaignId: (p.campaignId as string) || undefined });
+      if (p.memberId && !r.startsWith("Rescheduled")) {
         const blocked = r.startsWith("Blocked");
         await db.campaignMember.update({ where: { id: String(p.memberId) }, data: blocked ? { status: "blocked", blockedReason: r.slice(9, 200) } : { lastOutcome: r.startsWith("Rescheduled") ? "rescheduled" : "texted" } }).catch(() => null);
       }
@@ -251,6 +252,7 @@ export async function runTasks(limit = 10) {
         where: { id: t.id },
         data: { status: retry ? "open" : "failed", result: msg.slice(0, 500), dueAt: retry ? new Date(Date.now() + 5 * 60_000 * (t.attempts + 1)) : undefined },
       });
+      if (!retry) await (await import("./digest")).alertFailure(t.workspaceId, `Task failed: ${t.title}`, msg, t.entityType === "opportunity" && t.entityId ? `/deals/${t.entityId}` : "/ops?tab=tasks").catch(() => null);
     }
   }
   return n;

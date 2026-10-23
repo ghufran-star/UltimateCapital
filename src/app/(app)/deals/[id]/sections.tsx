@@ -235,7 +235,7 @@ export function NumbersTab({ opp, v, calc, params, writable, playbook }: { opp: 
 
 // ---------- Buyers ----------
 
-export function BuyersTab({ opp, calc, writable }: { opp: Deal; calc: Calculation | null; writable: boolean }) {
+export function BuyersTab({ opp, calc, ladder, writable }: { opp: Deal; calc: Calculation | null; ladder: { rounds: number[]; floor: number } | null; writable: boolean }) {
   const underContract = opp.contracts.some((k) => k.kind === "seller_purchase" && k.status === "effective");
   const serious = opp.interests.filter((i) => i.serious);
   const chosen = opp.transaction?.buyerId;
@@ -267,14 +267,15 @@ export function BuyersTab({ opp, calc, writable }: { opp: Deal; calc: Calculatio
             </div>
           )}
         </div>
-        {calc && (
+        {calc && ladder && (
           <div className="mt-3 flex flex-wrap gap-2 text-sm">
-            {calc.buyerRounds.map((r, i) => (
+            {!opp.approvedAt && opp.sellerLowest && opp.sellerLowest <= calc.maxBuy && <span className="badge badge-warn">Presumptive: based on the seller&apos;s {usd(opp.sellerLowest)}</span>}
+            {ladder.rounds.map((r, i) => (
               <span key={r} className="badge">
                 Round {i + 1}: {usd(r)}
               </span>
             ))}
-            <span className="badge badge-bad">Floor {usd(calc.floor)}</span>
+            <span className="badge badge-bad">Floor {usd(ladder.floor)}</span>
           </div>
         )}
       </Card>
@@ -361,7 +362,7 @@ export function BuyersTab({ opp, calc, writable }: { opp: Deal; calc: Calculatio
               </select>
               <input name="price" className="field tnum" placeholder="Offer" inputMode="numeric" />
               <Submit className="btn btn-ghost">Record offer</Submit>
-              {calc && <p className="text-xs text-muted">Anything below the floor of {usd(calc.floor)} needs your approval.</p>}
+              {ladder && <p className="text-xs text-muted">Anything below the floor of {usd(ladder.floor)} needs your approval.</p>}
             </ActionForm>
           </Card>
           <Card title="Choose the buyer">
@@ -374,7 +375,7 @@ export function BuyersTab({ opp, calc, writable }: { opp: Deal; calc: Calculatio
                   </option>
                 ))}
               </select>
-              <input name="price" className="field tnum" placeholder="Agreed price" inputMode="numeric" defaultValue={serious[0]?.priceMentioned ?? calc?.buyerRounds[0] ?? ""} />
+              <input name="price" className="field tnum" placeholder="Agreed price" inputMode="numeric" defaultValue={serious[0]?.priceMentioned ?? ladder?.rounds[0] ?? ""} />
               <Submit>Choose buyer</Submit>
               <p className="text-xs text-muted">Sets the assignment fee and creates the task to send the assignment.</p>
             </ActionForm>

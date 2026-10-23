@@ -2,7 +2,7 @@ import Link from "next/link";
 import { RowLink } from "@/components/client";
 import { Card, Empty, PageHeader, StatusBadge, Tabs } from "@/components/ui";
 import { db } from "@/lib/db";
-import { pageCtx } from "@/lib/session";
+import { pageCtx, propertyScope } from "@/lib/session";
 import { ago, fullName } from "@/lib/util";
 
 export default async function Sellers({ searchParams }: { searchParams: Promise<{ q?: string; tab?: string }> }) {
@@ -14,7 +14,7 @@ export default async function Sellers({ searchParams }: { searchParams: Promise<
   const sellers =
     tab === "sellers"
       ? await db.contact.findMany({
-          where: { workspaceId: ws, kind: "seller", ...(q ? { OR: [{ firstName: { contains: q, mode: "insensitive" } }, { lastName: { contains: q, mode: "insensitive" } }, { phone: { contains: q } }, { email: { contains: q, mode: "insensitive" } }] } : {}) },
+          where: { workspaceId: ws, kind: "seller", ...(c.states.length ? { OR: [{ ownerships: { some: { property: propertyScope(c) } } }, { state: { in: c.states } }] } : {}), ...(q ? { OR: [{ firstName: { contains: q, mode: "insensitive" } }, { lastName: { contains: q, mode: "insensitive" } }, { phone: { contains: q } }, { email: { contains: q, mode: "insensitive" } }] } : {}) },
           include: { ownerships: { include: { property: true } }, _count: { select: { interactions: true } } },
           orderBy: { updatedAt: "desc" },
           take: 200,
@@ -23,7 +23,7 @@ export default async function Sellers({ searchParams }: { searchParams: Promise<
   const props =
     tab === "properties"
       ? await db.property.findMany({
-          where: { workspaceId: ws, ...(q ? { OR: [{ address: { contains: q, mode: "insensitive" } }, { city: { contains: q, mode: "insensitive" } }, { zip: q }] } : {}) },
+          where: { workspaceId: ws, ...propertyScope(c), ...(q ? { OR: [{ address: { contains: q, mode: "insensitive" } }, { city: { contains: q, mode: "insensitive" } }, { zip: q }] } : {}) },
           include: { opportunities: { select: { id: true, stage: true } }, ownerships: { include: { contact: true } } },
           orderBy: { updatedAt: "desc" },
           take: 200,

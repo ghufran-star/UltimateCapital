@@ -2,9 +2,9 @@ import { audit, json, notify } from "./audit";
 import { setting } from "./config";
 import { db } from "./db";
 import { createTask, emit } from "./engine";
-import { Authority, buyerAuthority, Calculation, nearAgreement, resolveParams, sellerAuthority } from "./rules";
+import { Authority, buyerAuthority, calculate, Calculation, nearAgreement, sellerAuthority } from "./rules";
 import { fullName, usd } from "./util";
-import { activeRuleSet, latestValuation } from "./valuation";
+import { dealParams, latestValuation } from "./valuation";
 
 // Opportunities: stages, offer authority, near-agreement verification, approvals.
 
@@ -18,6 +18,24 @@ async function calcFor(opportunityId: string) {
   const v = await latestValuation(opportunityId);
   if (!v || v.blocked) return { v, calc: null as Calculation | null };
   return { v, calc: v.result as unknown as Calculation };
+}
+
+/**
+ * The purchase price buyer pricing is based on: the approved contract price; before approval, the seller's
+ * lowest number when it's within our max buy (the presumptive price); otherwise the rules' contract price.
+ */
+export function contractBasis(opp: { contractPrice: number | null; sellerLowest: number | null; approvedAt: Date | null }, calc: Calculation) {
+  if (opp.contractPrice && opp.approvedAt) return opp.contractPrice;
+  if (opp.sellerLowest && opp.sellerLowest <= calc.maxBuy) return Math.min(opp.sellerLowest, calc.maxBuy);
+  return opp.contractPrice || calc.contractPrice;
+}
+
+/** Buyer asking prices and the floor for a given contract price, under the deal's own rules. */
+export function buyerLadder(contract: number, calc: Calculation, params: { buyerRoundFees: number[]; minFee: number }) {
+  const floor = contract + params.minFee;
+  const cap = Math.floor(calc.investorMaxPrice / 100) * 100;
+  const rounds = [...new Set(params.buyerRoundFees.map((f) => Math.max(floor, Math.min(contract + f, cap))))].sort((a, b) => b - a);
+  return { rounds, floor };
 }
 
 /** What the negotiation agent may say. The ceiling is never revealed; the final step needs owner approval. */
@@ -51,16 +69,27 @@ export async function buyerAuthorityFor(ws: string, opportunityId: string, conta
   const { calc } = await calcFor(opportunityId);
   if (!calc) return { offerNow: null, ifCounteredUpTo: null, needsApproval: false, message: "Pricing isn't final yet. Ask what they'd pay for it and log it with record_offer." };
   const opp = await db.opportunity.findUniqueOrThrow({ where: { id: opportunityId } });
-  const contract = opp.contractPrice || calc.contractPrice;
-  const { params } = resolveParams((await activeRuleSet(ws)).data, {});
-  const rounds = params.buyerRoundFees.map((f) => Math.min(contract + f, Math.floor(calc.investorMaxPrice / 100) * 100)).filter((x) => x >= contract + params.minFee);
-  const floor = contract + params.minFee;
+  const params = await dealParams(ws, opportunityId);
+  const { rounds, floor } = buyerLadder(contractBasis(opp, calc), calc, params);
   const presented = await db.offer.findMany({ where: { opportunityId, side: "buyer", contactId, by: "us" } });
-  const a = buyerAuthority([...new Set(rounds)].sort((x, y) => y - x), floor, presented.map((o) => o.price), buyerOffer);
+  const approvedLow = presented.filter((o) => o.authority === "approved").map((o) => o.price);
+  const effFloor = Math.min(floor, ...approvedLow);
+  const a = buyerAuthority(rounds, effFloor, presented.filter((o) => o.authority !== "approved").map((o) => o.price), buyerOffer);
+  if (buyerOffer && buyerOffer < effFloor) {
+    await requestApproval(ws, opportunityId, "price_below_floor", `Buyer offered ${usd(buyerOffer)}, below the ${usd(floor)} floor`, `agent:disposition`, { price: buyerOffer, floor, contactId });
+  }
   if (a.offerNow && !presented.some((o) => o.price === a.offerNow)) {
-    await db.offer.create({ data: { opportunityId, side: "buyer", contactId, round: presented.length + 1, price: a.offerNow, by: "us", authority: "rule", valuationId: undefined } });
+    await db.offer.create({ data: { opportunityId, side: "buyer", contactId, round: presented.length + 1, price: a.offerNow, by: "us", authority: "rule" } });
   }
   return a;
+}
+
+async function requestApproval(ws: string, opportunityId: string, kind: string, title: string, requestedBy: string, detail: Record<string, unknown>) {
+  const existing = await db.approval.findFirst({ where: { workspaceId: ws, entityId: opportunityId, kind, status: "pending" } });
+  if (existing) return existing;
+  const ap = await db.approval.create({ data: { workspaceId: ws, kind, entityType: "opportunity", entityId: opportunityId, title, detail: json(detail), requestedBy } });
+  await notify(ws, "Approval needed", title, `/approvals#${ap.id}`);
+  return ap;
 }
 
 /** When the seller gets close to our numbers: verification pack to the owner + demand campaign, at once. */
@@ -69,7 +98,7 @@ export async function checkNearAgreement(ws: string, opportunityId: string) {
   if (opp.verificationSentAt || !opp.sellerLowest) return;
   const { calc } = await calcFor(opportunityId);
   if (!calc) return;
-  const { params } = resolveParams((await activeRuleSet(ws)).data, { state: opp.property.state, market: opp.property.city, zip: opp.property.zip, propertyType: opp.property.propertyType, dealType: opp.dealType, exit: opp.exitStrategy, conditionTier: opp.property.conditionTier, arv: calc.arv });
+  const params = await dealParams(ws, opportunityId);
   if (!nearAgreement(opp.sellerLowest, calc.maxBuy, params)) return;
   await createTask(ws, { kind: "verification_pack", title: "Send verification pack to owner", entityType: "opportunity", entityId: opportunityId, priority: 1, dedupeKey: `verify:${opportunityId}` });
   await createTask(ws, { kind: "demand_campaign", title: "Start anonymous buyer demand check", entityType: "opportunity", entityId: opportunityId, priority: 1, payload: { mode: "anonymous" }, dedupeKey: `demand:${opportunityId}` });
@@ -133,9 +162,36 @@ export async function sendVerificationPack(ws: string, opportunityId: string) {
 }
 
 /** Owner decisions on approvals. */
-export async function decideApproval(ws: string, approvalId: string, decision: "approved" | "rejected", userId: string, note?: string, price?: number | null) {
+/** What a given purchase price does to our fee and the investor's margin, under the deal's rules. */
+export async function priceImpact(ws: string, opportunityId: string, price: number) {
+  const v = await latestValuation(opportunityId);
+  if (!v || v.blocked) return null;
+  const calc = v.result as unknown as Calculation;
+  const opp = await db.opportunity.findUniqueOrThrow({ where: { id: opportunityId } });
+  const params = await dealParams(ws, opportunityId);
+  const at = calculate({ arv: calc.arv, repairs: calc.repairs, params, exit: opp.exitStrategy, rent: v.rent, contractPrice: price });
+  return {
+    maxBuy: calc.maxBuy,
+    over: price - calc.maxBuy,
+    viable: at.viable,
+    floor: at.floor,
+    investorMax: at.investorMaxPrice,
+    feeRound1: at.ourFeeAtRounds[0] ?? 0,
+    text: `At ${usd(price)} (${price > calc.maxBuy ? `${usd(price - calc.maxBuy)} above` : "within"} the ${usd(calc.maxBuy)} max buy): our fee at round 1 would be ${usd(at.ourFeeAtRounds[0] ?? 0)}, the floor ${usd(at.floor)}, and the investor's maximum ${usd(at.investorMaxPrice)}.${at.viable ? "" : " The deal would NOT work for an investor at our minimum fee."}`,
+  };
+}
+
+export async function decideApproval(ws: string, approvalId: string, decision: "approved" | "rejected", userId: string, note?: string, price?: number | null, overLock = false) {
   const ap = await db.approval.findUniqueOrThrow({ where: { id: approvalId } });
   if (ap.workspaceId !== ws || ap.status !== "pending") throw new Error("This approval isn't pending.");
+  if (decision === "approved" && ap.entityType === "opportunity" && ["final_offer", "offer_over_limit", "agent_request"].includes(ap.kind) && ap.requestedBy !== "agent:disposition") {
+    const d0 = (ap.detail || {}) as Record<string, unknown>;
+    const p0 = price || (d0.proposedPrice as number) || (d0.price as number) || null;
+    if (p0) {
+      const impact = await priceImpact(ws, ap.entityId, p0);
+      if (impact && impact.over > 0 && !overLock) throw new Error(`${impact.text} Tick "approve above the max buy" to confirm.`);
+    }
+  }
   await db.approval.update({ where: { id: ap.id }, data: { status: decision, decidedBy: userId, decidedAt: new Date(), note } });
   await audit(ws, userId, `approval_${decision}`, { type: ap.entityType, id: ap.entityId }, { meta: { kind: ap.kind, note, price } });
   const d = (ap.detail || {}) as Record<string, unknown>;
@@ -164,6 +220,13 @@ export async function decideApproval(ws: string, approvalId: string, decision: "
     case "payment":
       await db.payment.update({ where: { id: ap.entityId }, data: { status: "approved" } }).catch(() => null);
       break;
+    case "price_below_floor": {
+      const cid = (d.contactId as string) || null;
+      const p = price || (d.price as number) || null;
+      if (p && cid) await db.offer.create({ data: { opportunityId: ap.entityId, side: "buyer", contactId: cid, round: 97, price: p, by: "us", authority: "approved" } });
+      await db.opportunity.update({ where: { id: ap.entityId }, data: { exception: null } }).catch(() => null);
+      break;
+    }
     case "agent_request":
     case "offer_over_limit":
       if (ap.entityType === "opportunity" && price) {

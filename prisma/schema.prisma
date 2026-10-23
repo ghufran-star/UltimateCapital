@@ -756,3 +756,26 @@ model AuditEvent {
 
   @@index([workspaceId, entityType, entityId])
 }
+
+// Single background worker: only the holder of this lease runs automation.
+model Lease {
+  name      String   @id
+  holder    String
+  expiresAt DateTime
+}
+
+// Cached responses from paid data APIs (e.g. comps), so each lookup is paid for once.
+model ApiCache {
+  key       String   @id
+  value     Json
+  createdAt DateTime @default(now())
+}
+
+// Failed sign-in attempts, for lockout.
+model LoginAttempt {
+  id        String   @id @default(cuid())
+  key       String // "email:<address>" or "ip:<address>"
+  createdAt DateTime @default(now())
+
+  @@index([key, createdAt])
+}

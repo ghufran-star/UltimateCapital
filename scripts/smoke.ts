@@ -69,6 +69,22 @@ async function main() {
   if (lc.ok) fail("liveCheck without provider should block cold outreach");
   console.log("compliance checks ok");
 
+  // Pricing locks: every buyer price respects the deal's own resolved minimum fee.
+  const { buyerAuthorityFor, priceImpact } = await import("../src/lib/deals");
+  const { dealParams } = await import("../src/lib/valuation");
+  const priced = await db.opportunity.findMany({ where: { workspaceId: ws, valuations: { some: { blocked: null } } }, take: 8 });
+  for (const o of priced) {
+    const prm = await dealParams(ws, o.id);
+    const buyer = await db.contact.findFirst({ where: { workspaceId: ws, kind: "buyer" } });
+    const a = await buyerAuthorityFor(ws, o.id, buyer!.id, 1);
+    const v = await db.valuation.findFirst({ where: { opportunityId: o.id }, orderBy: { createdAt: "desc" } });
+    const calc = v!.result as { maxBuy: number; contractPrice: number };
+    if (a.offerNow !== null && a.offerNow < Math.min(o.sellerLowest && o.sellerLowest <= calc.maxBuy ? o.sellerLowest : calc.contractPrice, calc.maxBuy) + prm.minFee - 1 && !(o.contractPrice && o.approvedAt)) fail(`buyer price ${a.offerNow} below floor on ${o.id}`);
+    const imp = await priceImpact(ws, o.id, calc.maxBuy + 5000);
+    if (imp && imp.over !== 5000) fail("price impact over-lock maths");
+  }
+  console.log(`pricing locks ok on ${priced.length} deals`);
+
   // Sessions and URLs for the crawl.
   const demoToken = randomBytes(24).toString("base64url");
   const realToken = randomBytes(24).toString("base64url");

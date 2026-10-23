@@ -322,9 +322,14 @@ Rules:
 
   // ----- buyer response to a presented deal -----
   if (contact?.kind === "buyer" && intel.dealResponse && intel.dealResponse.interested !== "none") {
-    const interest = it.opportunityId
-      ? await db.buyerInterest.findUnique({ where: { opportunityId_contactId: { opportunityId: it.opportunityId, contactId: contact.id } } })
-      : await db.buyerInterest.findFirst({ where: { contactId: contact.id, presentedAt: { gte: new Date(Date.now() - 21 * 864e5) } }, orderBy: { presentedAt: "desc" } });
+    let interest = it.opportunityId ? await db.buyerInterest.findUnique({ where: { opportunityId_contactId: { opportunityId: it.opportunityId, contactId: contact.id } } }) : null;
+    if (!interest) {
+      // Replies carry the deal code from the teaser ("YES 7F3A"); without one, the latest deal sent wins.
+      const recent = await db.buyerInterest.findMany({ where: { contactId: contact.id, presentedAt: { gte: new Date(Date.now() - 30 * 864e5) } }, orderBy: { presentedAt: "desc" } });
+      const words = new Set((it.body || "").toUpperCase().match(/[A-Z0-9]{4}/g) || []);
+      interest = recent.find((r) => words.has(r.opportunityId.slice(-4).toUpperCase())) || recent[0] || null;
+      if (interest && !it.opportunityId) await db.interaction.update({ where: { id: it.id }, data: { opportunityId: interest.opportunityId } });
+    }
     if (interest) {
       const r = intel.dealResponse;
       const stage = r.interested === "no" ? "REJECTED" : r.price ? "OFFER_SUBMITTED" : "INTERESTED";

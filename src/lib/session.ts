@@ -53,6 +53,8 @@ export type Ctx = {
   user: { id: string; email: string; name: string; phone: string | null; isPlatformOwner: boolean };
   workspace: { id: string; name: string; isDemo: boolean; timezone: string };
   role: Role;
+  /** States this member may work. Empty = all states. */
+  states: string[];
 };
 
 // ---------- Passwords ----------
@@ -124,7 +126,20 @@ export async function getCtx(): Promise<Ctx | null> {
     user: { id: u.id, email: u.email, name: u.name, phone: u.phone, isPlatformOwner: u.isPlatformOwner },
     workspace: { id: m.workspace.id, name: m.workspace.name, isDemo: m.workspace.isDemo, timezone: m.workspace.timezone },
     role: m.role as Role,
+    states: ["owner", "admin"].includes(m.role) ? [] : m.states,
   };
+}
+
+/** Prisma filter on a Property for the member's states (empty = no limit). */
+export const propertyScope = (c: Ctx) => (c.states.length ? { state: { in: c.states } } : {});
+/** Prisma filter on an Opportunity for the member's states. */
+export const dealScope = (c: Ctx) => (c.states.length ? { property: { state: { in: c.states } } } : {});
+
+/** Throws unless the deal is in this workspace and in the member's states. */
+export async function assertDeal(c: Ctx, opportunityId: string) {
+  const o = await db.opportunity.findFirst({ where: { id: opportunityId, workspaceId: c.workspace.id, ...dealScope(c) } });
+  if (!o) throw new HttpError(404, "Deal not found, or it's outside the states you work.");
+  return o;
 }
 
 export async function switchWorkspace(workspaceId: string) {

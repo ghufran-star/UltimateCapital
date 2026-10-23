@@ -2,7 +2,7 @@ import Link from "next/link";
 import { ActionForm, RowLink, Submit } from "@/components/client";
 import { Card, Empty, PageHeader, Stat, StatusBadge, Tabs } from "@/components/ui";
 import { db } from "@/lib/db";
-import { can, pageCtx } from "@/lib/session";
+import { can, dealScope, pageCtx } from "@/lib/session";
 import { label } from "@/lib/stages";
 import { ago, fmtDate, usd } from "@/lib/util";
 import { reconcileAction } from "../../actions/ops";
@@ -12,7 +12,7 @@ export default async function Closing({ searchParams }: { searchParams: Promise<
   const ws = c.workspace.id;
   const tab = (await searchParams).tab || "transactions";
   const [txs, contracts, payments, titleCos] = await Promise.all([
-    db.transaction.findMany({ where: { workspaceId: ws }, include: { opportunity: { include: { property: true } }, titleCompany: true }, orderBy: [{ closingAt: "asc" }] }),
+    db.transaction.findMany({ where: { workspaceId: ws, opportunity: dealScope(c) }, include: { opportunity: { include: { property: true } }, titleCompany: true }, orderBy: [{ closingAt: "asc" }] }),
     db.contract.findMany({ where: { workspaceId: ws, status: { in: ["draft", "sent", "viewed", "partially_signed"] } }, include: { signers: true }, orderBy: { updatedAt: "desc" } }),
     db.payment.findMany({ where: { workspaceId: ws, status: { notIn: ["cancelled"] } }, orderBy: { createdAt: "desc" }, take: 100 }),
     db.titleCompany.findMany({ where: { workspaceId: ws } }),

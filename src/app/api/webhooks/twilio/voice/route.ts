@@ -19,6 +19,7 @@ export async function POST(req: NextRequest) {
     try {
       const agent = num?.inboundAgentId ? await db.agent.findUnique({ where: { id: num.inboundAgentId } }) : await agentForRole(ws, "receptionist");
       if (agent?.retellAgentId) {
+        // Retell custom telephony: register the call, then dial sip:{call_id}@sip.retellai.com within 5 minutes.
         // Give the receptionist the caller's history so it greets known people by name and doesn't re-ask.
         const contact = await db.contact.findFirst({ where: { workspaceId: ws, OR: [{ phone: from }, { phone2: from }] } });
         const company = (await setting(ws, "COMPANY_NAME")) || "our company";
@@ -29,7 +30,7 @@ export async function POST(req: NextRequest) {
           vars = { ...(await buildDynamicVariables(ws, { contactId: contact.id, agentId: agent.id, pack: pack || undefined })), opening_line: `Thanks for calling ${company}, this is ${agent.name}. Is this ${contact.firstName || "you"}?` };
         }
         const r = await retell(ws, "POST", "/v2/register-phone-call", { agent_id: agent.retellAgentId, from_number: from, to_number: to, direction: "inbound", retell_llm_dynamic_variables: vars, metadata: { ws, contactId: contact?.id || "", agentRole: agent.role } });
-        if (r.call_id) return twiml(`<Response><Dial><Sip>sip:${escapeXml(String(r.call_id))}@5t4n6j0wnrl.sip.livekit.cloud</Sip></Dial></Response>`);
+        if (r.call_id) return twiml(`<Response><Dial><Sip>sip:${escapeXml(String(r.call_id))}@sip.retellai.com</Sip></Dial></Response>`);
       }
     } catch (e) {
       console.error("inbound to retell", e);

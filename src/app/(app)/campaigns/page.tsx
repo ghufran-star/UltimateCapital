@@ -8,7 +8,7 @@ import { ago } from "@/lib/util";
 
 export default async function Campaigns() {
   const c = await pageCtx();
-  const camps = await db.campaign.findMany({ where: { workspaceId: c.workspace.id }, orderBy: { updatedAt: "desc" } });
+  const camps = await db.campaign.findMany({ where: { workspaceId: c.workspace.id, ...(c.states.length ? { OR: [{ state: { in: c.states } }, { state: null }] } : {}) }, orderBy: { updatedAt: "desc" } });
   const stats = await db.campaignMember.groupBy({ by: ["campaignId", "status"], where: { campaignId: { in: camps.map((x) => x.id) } }, _count: true });
   const s = (id: string, st?: string) => stats.filter((x) => x.campaignId === id && (!st || x.status === st)).reduce((a, x) => a + x._count, 0);
   return (

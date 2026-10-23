@@ -198,7 +198,32 @@ async function afterSignature(ws: string, contractId: string) {
     },
   });
   await audit(ws, "system", "contract_effective", { type: "contract", id: c.id }, { meta: { hash: sha(pdf) } });
+  await sendSignedCopies(ws, c.id, pdf).catch((e) => console.error("[contracts] signed copies", e));
   await emit(ws, "contract.effective", { type: "contract", id: c.id });
+}
+
+/** Every signer gets the fully signed PDF (with its certificate) by email as soon as it is effective. */
+async function sendSignedCopies(ws: string, contractId: string, pdf: Uint8Array) {
+  const c = await db.contract.findUniqueOrThrow({ where: { id: contractId }, include: { signers: true } });
+  const f = c.fields as Record<string, string>;
+  const company = (await setting(ws, "COMPANY_NAME")) || "UltimateCapital";
+  if (!(await setting(ws, "RESEND_API_KEY"))) return;
+  const { sendEmail } = await import("./comms");
+  const filename = `${c.kind}-${String(f.property_address || c.id).replace(/\W+/g, "-")}-signed.pdf`;
+  const sent: string[] = [];
+  for (const s of c.signers) {
+    if (!s.email) continue;
+    await sendEmail(ws, {
+      to: s.email,
+      subject: `Signed copy: ${f.property_address || "your agreement"}`,
+      text: `Hi ${s.name.split(" ")[0]},\n\nAll parties have signed. Attached is your copy of the agreement for ${f.property_address || "the property"}, with its certificate of completion.\n\n${company}`,
+      opportunityId: c.opportunityId,
+      attachments: [{ filename, content: Buffer.from(pdf) }],
+      skipChecks: true,
+    });
+    sent.push(s.name);
+  }
+  await audit(ws, "system", "signed_copies_sent", { type: "contract", id: contractId }, { meta: { to: sent } });
 }
 
 function ascii(s: string) {

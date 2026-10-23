@@ -2,10 +2,10 @@ import { audit, json, notify } from "./audit";
 import { db } from "./db";
 import { activePack } from "./eligibility";
 import { createTask } from "./engine";
-import { Calculation, investorView, resolveParams, TIER_ORDER, Tier } from "./rules";
+import { Calculation, investorView, TIER_ORDER, Tier } from "./rules";
 import { PROPERTY_TYPES } from "./rules";
 import { fullName, usd } from "./util";
-import { activeRuleSet, latestValuation } from "./valuation";
+import { dealParams, latestValuation } from "./valuation";
 
 // Buyer matching (hard buy-box filters, then ranking), hot-deal score, and disposition outreach
 // that respects each investor's contact limits, buying timeline and fatigue.
@@ -18,9 +18,11 @@ export async function runMatching(ws: string, opportunityId: string) {
   if (!v || v.blocked) return "No usable valuation yet";
   const calc = v.result as unknown as Calculation;
   const p = opp.property;
-  const rs = await activeRuleSet(ws);
-  const { params } = resolveParams(rs.data, { state: p.state, market: p.city, zip: p.zip, propertyType: p.propertyType, dealType: opp.dealType, exit: opp.exitStrategy, conditionTier: p.conditionTier, arv: calc.arv });
-  const price = calc.buyerRounds[0] || calc.floor;
+  const params = await dealParams(ws, opportunityId);
+  const { buyerLadder, contractBasis } = await import("./deals");
+  const ladder = buyerLadder(contractBasis(opp, calc), calc, params);
+  const price = ladder.rounds[0] || ladder.floor;
+  const floor = ladder.floor;
 
   const buyers = await db.contact.findMany({
     where: { workspaceId: ws, kind: "buyer", doNotContact: false, buyBoxes: { some: { active: true } } },
@@ -39,7 +41,7 @@ export async function runMatching(ws: string, opportunityId: string) {
       if (box.excludedZips.includes(p.zip)) fail(`excluded ZIP ${p.zip}`);
       if (!has(box.propertyTypes, p.propertyType)) fail(typeLabel(p.propertyType));
       if (box.minPrice && price < box.minPrice) fail(`price below their ${usd(box.minPrice)} minimum`);
-      if (box.maxPrice && calc.floor > box.maxPrice) fail(`even our floor ${usd(calc.floor)} is above their max ${usd(box.maxPrice)}`);
+      if (box.maxPrice && floor > box.maxPrice) fail(`even our floor ${usd(floor)} is above their max ${usd(box.maxPrice)}`);
       if (box.minBeds && (p.beds || 0) < box.minBeds) fail(`${p.beds ?? "?"} beds`);
       if (box.minBaths && (p.baths || 0) < box.minBaths) fail(`${p.baths ?? "?"} baths`);
       if (box.minSqft && (p.sqft || 0) < box.minSqft) fail(`${p.sqft ?? "?"} sq ft`);
@@ -49,7 +51,7 @@ export async function runMatching(ws: string, opportunityId: string) {
       // The investor's own profit requirement (net and/or gross) at the price we'd present.
       const ip = { ...params, investor: { ...params.investor, profitBasis: (box.profitBasis as "net" | "gross" | "both") || params.investor.profitBasis, minProfitPct: box.minProfitPct ?? params.investor.minProfitPct, minNetProfit: box.minNetProfit ?? params.investor.minNetProfit } };
       const effectivePrice = box.maxPrice ? Math.min(price, box.maxPrice) : price;
-      const iv = investorView(Math.max(effectivePrice, calc.floor), calc.arv, calc.repairs, ip, v.rent);
+      const iv = investorView(Math.max(effectivePrice, floor), calc.arv, calc.repairs, ip, v.rent);
       if (!iv.meets) fail(`their ${ip.investor.profitBasis} profit at ${usd(iv.price)} would be ${usd(iv.net)} (${Math.round(iv.netPct * 100)}%)`);
       if (opp.exitStrategy === "rental" && box.minCapRate && (iv.capRate || 0) < box.minCapRate) fail(`cap rate ${((iv.capRate || 0) * 100).toFixed(1)}%`);
       if (why.length) continue;
@@ -96,13 +98,16 @@ export async function updateHotScore(ws: string, opportunityId: string) {
   score += Math.round(responseRate * 15);
   const speeds = interested.filter((i) => i.presentedAt && i.respondedAt).map((i) => (+i.respondedAt! - +i.presentedAt!) / 3600_000);
   if (speeds.length) score += Math.max(0, 10 - Math.round(Math.min(...speeds) / 2));
-  if (calc && interested.some((i) => i.priceMentioned && i.priceMentioned >= calc.floor)) score += 10;
+  if (calc) {
+    const { buyerLadder, contractBasis } = await import("./deals");
+    const fl = buyerLadder(contractBasis(opp, calc), calc, await dealParams(ws, opportunityId)).floor;
+    if (interested.some((i) => i.priceMentioned && i.priceMentioned >= fl)) score += 10;
+  }
   score += Math.min(10, Math.round(serious.reduce((a, i) => a + i.contact.reliability, 0) / Math.max(1, serious.length) / 10));
   score = Math.max(0, Math.min(100, score));
   await db.opportunity.update({ where: { id: opportunityId }, data: { hotScore: score } });
 
-  const rs = await activeRuleSet(ws);
-  const { params } = resolveParams(rs.data, { state: opp.property.state, propertyType: opp.property.propertyType });
+  const params = await dealParams(ws, opportunityId);
   if (!opp.emdRecommendedAt && serious.length >= params.hotDeal.minSerious && score >= params.hotDeal.minScore) {
     const pack = await activePack(ws, opp.property.state);
     const emd = pack?.contracts.typicalEmd || 1000;
@@ -125,9 +130,9 @@ export async function updateHotScore(ws: string, opportunityId: string) {
 }
 
 /** Contact limits for new deals: weekly/monthly caps, stated timeline, fatigue. */
-async function canSendDeal(ws: string, contactId: string) {
+async function canSendDeal(ws: string, contactId: string, opportunityId: string) {
   const c = await db.contact.findUniqueOrThrow({ where: { id: contactId } });
-  const { params } = resolveParams((await activeRuleSet(ws)).data, {});
+  const params = await dealParams(ws, opportunityId);
   if (c.doNotContact) return "Do not contact";
   if (c.nextBuyingAt && c.nextBuyingAt > new Date()) return `Not buying until ${c.nextBuyingAt.toDateString()}`;
   const wk = await db.buyerInterest.count({ where: { contactId, presentedAt: { gte: new Date(Date.now() - 7 * 864e5) } } });
@@ -161,6 +166,9 @@ export async function startDemandCampaign(ws: string, opportunityId: string, mod
   return `${ints.length} buyers queued`;
 }
 
+/** Short code that ties a buyer's reply to the right deal ("YES 7F3A"). */
+export const dealCode = (opportunityId: string) => opportunityId.slice(-4).toUpperCase();
+
 export async function dealTeaser(ws: string, opportunityId: string, mode: string, price: number | null) {
   const opp = await db.opportunity.findUniqueOrThrow({ where: { id: opportunityId }, include: { property: true } });
   const p = opp.property;
@@ -177,21 +185,27 @@ export async function dealTeaser(ws: string, opportunityId: string, mode: string
   ].filter(Boolean);
   const body =
     mode === "anonymous"
-      ? `Off-market lead: ${parts.join(", ")}. Would you buy at that number? Reply YES for details when available.`
-      : `New deal: ${parts.join(", ")}. ${pack?.wholesaling.disclosureText || ""} Reply for photos and access.`;
+      ? `Off-market lead ${dealCode(opportunityId)}: ${parts.join(", ")}. Would you buy at that number? Reply YES ${dealCode(opportunityId)} for details when available.`
+      : `New deal ${dealCode(opportunityId)}: ${parts.join(", ")}. ${pack?.wholesaling.disclosureText || ""} Reply ${dealCode(opportunityId)} for photos and access.`;
   return body.replace(/\s+/g, " ").trim();
 }
 
 export async function outreachToBuyer(ws: string, opportunityId: string, contactId: string, mode: string) {
-  const blocked = await canSendDeal(ws, contactId);
+  const blocked = await canSendDeal(ws, contactId, opportunityId);
   if (blocked) {
     await db.buyerInterest.updateMany({ where: { opportunityId, contactId }, data: { notes: `Not sent: ${blocked}` } });
     return `Skipped: ${blocked}`;
   }
   const c = await db.contact.findUniqueOrThrow({ where: { id: contactId } });
   const v = await latestValuation(opportunityId);
-  const calc = v?.result as unknown as Calculation | undefined;
-  const price = calc?.buyerRounds[0] || null;
+  const calc = v && !v.blocked ? (v.result as unknown as Calculation) : undefined;
+  let price: number | null = null;
+  if (calc) {
+    const opp = await db.opportunity.findUniqueOrThrow({ where: { id: opportunityId } });
+    const { buyerLadder, contractBasis } = await import("./deals");
+    // Before contract this is the presumptive price: the seller's own number plus our round-1 fee.
+    price = buyerLadder(contractBasis(opp, calc), calc, await dealParams(ws, opportunityId)).rounds[0] ?? null;
+  }
   const text = await dealTeaser(ws, opportunityId, mode, price);
   const comms = await import("./comms");
   let r = "";

@@ -29,11 +29,34 @@ export const DEFAULT_CAMPAIGN: CampaignSettings = {
 
 export const roleFor = (kind: string) => (kind === "buyer" ? "buyer_acquisition" : kind === "disposition" ? "disposition" : "seller_acquisition");
 
+/** Estimated spend so far: AI call minutes and texts sent for this campaign. */
+export async function campaignSpend(ws: string, campaignId: string) {
+  const { setting } = await import("./config");
+  const perMin = Number((await setting(ws, "COST_PER_CALL_MINUTE")) || 0.12) || 0.12;
+  const perSms = Number((await setting(ws, "COST_PER_SMS")) || 0.015) || 0.015;
+  const [calls, texts] = await Promise.all([
+    db.interaction.aggregate({ where: { workspaceId: ws, campaignId, channel: "call", direction: "outbound" }, _sum: { durationSec: true }, _count: true }),
+    db.interaction.count({ where: { workspaceId: ws, campaignId, channel: "sms", direction: "outbound" } }),
+  ]);
+  // Every placed call bills at least a minute, even unanswered ones.
+  const minutes = Math.max(calls._count, Math.ceil((calls._sum.durationSec || 0) / 60));
+  return { minutes, texts, total: Math.round((minutes * perMin + texts * perSms) * 100) / 100 };
+}
+
 export async function dialerTick() {
   const running = await db.campaign.findMany({ where: { status: "running", workspace: { isDemo: false } } });
   let queued = 0;
   for (const c of running) {
     const s = { ...DEFAULT_CAMPAIGN, ...((c.settings as Partial<CampaignSettings>) || {}) };
+    if (s.budget) {
+      const spend = await campaignSpend(c.workspaceId, c.id);
+      if (spend.total >= s.budget) {
+        await db.campaign.update({ where: { id: c.id }, data: { status: "paused" } });
+        const { notify } = await import("./audit");
+        await notify(c.workspaceId, "Campaign paused: budget reached", `${c.name} spent about $${spend.total} of its $${s.budget} budget.`, `/campaigns/${c.id}`);
+        continue;
+      }
+    }
     const since = new Date(Date.now() - 24 * 3600_000);
     // Contacts attempted in the last 24 hours (each attempt is one task with this campaign's key).
     const today = await db.task.count({ where: { workspaceId: c.workspaceId, dedupeKey: { startsWith: `campaign:${c.id}:` }, createdAt: { gte: since } } });

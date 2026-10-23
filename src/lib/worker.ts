@@ -1,5 +1,23 @@
 import { dialerTick } from "./campaigns";
+import { randomBytes } from "node:crypto";
+import { db } from "./db";
 import { runEvents, runTasks } from "./engine";
+
+const ME = `${process.env.RAILWAY_REPLICA_ID || "local"}:${randomBytes(4).toString("hex")}`;
+
+/** Only one server runs automation at a time, even with several replicas. The lease lasts 5 minutes and is renewed every loop. */
+async function holdLease() {
+  const now = new Date();
+  const until = new Date(Date.now() + 5 * 60_000);
+  const r = await db.lease.updateMany({ where: { name: "worker", OR: [{ holder: ME }, { expiresAt: { lt: now } }] }, data: { holder: ME, expiresAt: until } });
+  if (r.count) return true;
+  try {
+    await db.lease.create({ data: { name: "worker", holder: ME, expiresAt: until } });
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 // Background worker on the long-running server (Railway): events → tasks → actions, and the dialer.
 
@@ -10,15 +28,24 @@ export function startWorker() {
   g.__ucWorker = true;
   console.log("[worker] started");
   let lastDial = 0;
+  let lastDigest = 0;
   const loop = async () => {
     while (true) {
       let worked = 0;
       try {
+        if (!(await holdLease())) {
+          await new Promise((r) => setTimeout(r, 15_000));
+          continue;
+        }
         worked += await runEvents(25);
         worked += await runTasks(8);
         if (Date.now() - lastDial > 60_000) {
           lastDial = Date.now();
           worked += await dialerTick();
+        }
+        if (Date.now() - lastDigest > 10 * 60_000) {
+          lastDigest = Date.now();
+          await (await import("./digest")).digestTick();
         }
       } catch (err) {
         console.error("[worker]", err instanceof Error ? err.message : err);

@@ -9,7 +9,7 @@ import { queueScrub } from "@/lib/dnc";
 import { optOut } from "@/lib/eligibility";
 import { createTask, emit } from "@/lib/engine";
 import { runMatching, startDemandCampaign } from "@/lib/matching";
-import { requireCtx } from "@/lib/session";
+import { assertDeal, requireCtx } from "@/lib/session";
 import { e164, int, list, num, str } from "@/lib/util";
 import { runValuation } from "@/lib/valuation";
 import { act } from "./util";
@@ -418,7 +418,7 @@ export async function revalueAction(_: ActionState, fd: FormData): Promise<Actio
   return act(async () => {
     const c = await requireCtx("deals", { write: true });
     const id = String(fd.get("opportunityId"));
-    await db.opportunity.findFirstOrThrow({ where: { id, workspaceId: c.workspace.id } });
+    await assertDeal(c, id);
     for (const field of ["arv", "repairs"] as const) {
       const v = int(fd.get(field === "arv" ? "arvOverride" : "repairsOverride"));
       if (!v) continue;
@@ -435,7 +435,7 @@ export async function updateDealAction(_: ActionState, fd: FormData): Promise<Ac
     const c = await requireCtx("deals", { write: true });
     const ws = c.workspace.id;
     const id = String(fd.get("opportunityId"));
-    const opp = await db.opportunity.findFirstOrThrow({ where: { id, workspaceId: ws } });
+    const opp = await assertDeal(c, id);
     const sellerLowest = int(fd.get("sellerLowest"));
     await db.opportunity.update({
       where: { id },
@@ -466,7 +466,7 @@ export async function recordOfferAction(_: ActionState, fd: FormData): Promise<A
     const c = await requireCtx("deals", { write: true });
     const ws = c.workspace.id;
     const opportunityId = String(fd.get("opportunityId"));
-    const opp = await db.opportunity.findFirstOrThrow({ where: { id: opportunityId, workspaceId: ws } });
+    const opp = await assertDeal(c, opportunityId);
     const price = int(fd.get("price"));
     if (!price) throw new Error("Enter a price.");
     const side = String(fd.get("side") || "seller");
@@ -490,7 +490,7 @@ export async function dealCampaignAction(_: ActionState, fd: FormData): Promise<
   return act(async () => {
     const c = await requireCtx("deals", { write: true });
     const id = String(fd.get("opportunityId"));
-    await db.opportunity.findFirstOrThrow({ where: { id, workspaceId: c.workspace.id } });
+    await assertDeal(c, id);
     const what = String(fd.get("what"));
     if (what === "match") {
       await runMatching(c.workspace.id, id);
@@ -521,7 +521,7 @@ export async function chooseBuyerAction(_: ActionState, fd: FormData): Promise<A
     const ws = c.workspace.id;
     const opportunityId = String(fd.get("opportunityId"));
     const buyerId = String(fd.get("contactId"));
-    const opp = await db.opportunity.findFirstOrThrow({ where: { id: opportunityId, workspaceId: ws } });
+    const opp = await assertDeal(c, opportunityId);
     const price = int(fd.get("price"));
     if (!price) throw new Error("Enter the buyer's price.");
     const fee = price - (opp.contractPrice || 0);

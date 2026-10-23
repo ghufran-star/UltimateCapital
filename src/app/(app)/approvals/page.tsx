@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import type { Calculation } from "@/lib/rules";
 import { can, pageCtx } from "@/lib/session";
 import { ago, usd } from "@/lib/util";
+import { priceImpact } from "@/lib/deals";
 import { decideApprovalAction } from "../../actions/ops";
 
 const KIND_HELP: Record<string, string> = {
@@ -25,6 +26,12 @@ export default async function Approvals({ searchParams }: { searchParams: Promis
   const users = await db.user.findMany({ where: { memberships: { some: { workspaceId: c.workspace.id } } }, select: { id: true, name: true } });
   const uname = (id?: string | null) => users.find((u) => u.id === id)?.name || id || "";
   const canApprove = can(c.role, "approve") && !c.workspace.isDemo;
+  const impacts: Record<string, Awaited<ReturnType<typeof priceImpact>>> = {};
+  for (const a of list.filter((x) => x.status === "pending" && x.entityType === "opportunity")) {
+    const d = (a.detail || {}) as Record<string, unknown>;
+    const p = Number(d.proposedPrice || d.price || 0);
+    if (p) impacts[a.id] = await priceImpact(c.workspace.id, a.entityId, p).catch(() => null);
+  }
   const pendingCount = await db.approval.count({ where: { workspaceId: c.workspace.id, status: "pending" } });
 
   return (
@@ -91,6 +98,12 @@ export default async function Approvals({ searchParams }: { searchParams: Promis
                           <label className="block space-y-1 text-sm">
                             <span className="font-medium">Approved price</span>
                             <input name="price" className="field tnum" inputMode="numeric" defaultValue={Number(d.proposedPrice || d.price || opp?.sellerLowest || calc?.maxBuy || 0) || ""} />
+                          </label>
+                        )}
+                        {impacts[a.id] && <p className={`text-xs ${impacts[a.id]!.over > 0 ? "text-bad" : "text-muted"}`}>{impacts[a.id]!.text}</p>}
+                        {["final_offer", "offer_over_limit", "agent_request", "price_below_floor"].includes(a.kind) && (
+                          <label className="flex items-start gap-2 text-xs text-muted">
+                            <input type="checkbox" name="overLock" className="mt-0.5" /> Approve above the max buy if the price is over it (only needed when it is)
                           </label>
                         )}
                         <input name="note" className="field" placeholder="Note (optional)" />

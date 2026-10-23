@@ -1,6 +1,7 @@
 "use server";
 
 import { randomBytes } from "node:crypto";
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import type { ActionState } from "@/components/client";
 import { audit } from "@/lib/audit";
@@ -47,8 +48,19 @@ export async function setupAction(_: ActionState, fd: FormData): Promise<ActionS
 export async function loginAction(_: ActionState, fd: FormData): Promise<ActionState> {
   return act(async () => {
     const email = normEmail(String(fd.get("email") || ""));
+    const ip = (await headers()).get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
+    const since = new Date(Date.now() - 15 * 60_000);
+    const [byEmail, byIp] = await Promise.all([
+      db.loginAttempt.count({ where: { key: `email:${email}`, createdAt: { gte: since } } }),
+      db.loginAttempt.count({ where: { key: `ip:${ip}`, createdAt: { gte: since } } }),
+    ]);
+    if (byEmail >= 5 || byIp >= 20) throw new Error("Too many sign-in attempts. Wait 15 minutes and try again.");
     const user = await db.user.findUnique({ where: { email } });
-    if (!user || !(await verifyPassword(String(fd.get("password") || ""), user.passwordHash))) throw new Error("Email or password isn't right.");
+    if (!user || !(await verifyPassword(String(fd.get("password") || ""), user.passwordHash))) {
+      await db.loginAttempt.createMany({ data: [{ key: `email:${email}` }, { key: `ip:${ip}` }] });
+      throw new Error("Email or password isn't right.");
+    }
+    await db.loginAttempt.deleteMany({ where: { key: `email:${email}` } });
     await startSession(user.id);
     return { ok: true, redirect: "/" };
   });

@@ -20,6 +20,7 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
     include: { buyBoxes: { orderBy: { createdAt: "asc" } }, ownerships: { include: { property: { include: { opportunities: true } } } }, consents: { orderBy: { createdAt: "desc" } }, interests: { include: { opportunity: { include: { property: true } } }, orderBy: { updatedAt: "desc" } } },
   });
   if (!ct) notFound();
+  if (c.states.length && ct.kind === "seller" && !ct.ownerships.some((o) => c.states.includes(o.property.state)) && !(ct.state && c.states.includes(ct.state))) notFound();
   const [interactions, facts, tasks, members, checks] = await Promise.all([
     db.interaction.findMany({ where: { workspaceId: ws, contactId: id }, orderBy: { createdAt: "desc" }, take: 50 }),
     db.fact.findMany({ where: { workspaceId: ws, entityType: "contact", entityId: id }, orderBy: { createdAt: "desc" }, take: 60 }),

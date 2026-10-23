@@ -81,6 +81,10 @@ export function CampaignForm({ camp, agents, kind }: { camp?: Campaign; agents: 
             <textarea name="smsTemplate" defaultValue={s.smsTemplate} rows={2} className="field" />
           </Field>
         </div>
+        <Field label="Budget ($, optional)" hint="Pauses the campaign when estimated call and text spend reaches it.">
+          <input name="budget" defaultValue={s.budget ?? ""} className="field" inputMode="numeric" />
+        </Field>
+        <div />
         <Field label="Only ZIPs (optional)">
           <input name="fZips" defaultValue={s.filters?.zips?.join(", ")} className="field" />
         </Field>

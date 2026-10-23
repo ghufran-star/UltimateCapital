@@ -3,7 +3,7 @@ import { RowLink } from "@/components/client";
 import { Card, Empty, HotBadge, PageHeader, StatusBadge, Tabs } from "@/components/ui";
 import { db } from "@/lib/db";
 import type { Calculation } from "@/lib/rules";
-import { pageCtx } from "@/lib/session";
+import { dealScope, pageCtx, propertyScope } from "@/lib/session";
 import { ago, usd } from "@/lib/util";
 
 const VIEWS: Record<string, { label: string; stages?: string[] }> = {
@@ -24,9 +24,10 @@ export default async function Deals({ searchParams }: { searchParams: Promise<{ 
   const deals = await db.opportunity.findMany({
     where: {
       workspaceId: c.workspace.id,
+      ...dealScope(c),
       ...(stages ? { stage: { in: stages } } : {}),
       ...(view === "hot" ? { hotScore: { gte: 50 } } : {}),
-      ...(sp.state ? { property: { state: sp.state } } : {}),
+      ...(sp.state ? { AND: [{ property: { state: sp.state } }] } : {}),
       ...(q ? { OR: [{ property: { address: { contains: q, mode: "insensitive" } } }, { property: { city: { contains: q, mode: "insensitive" } } }, { property: { zip: q } }] } : {}),
     },
     include: { property: true, valuations: { orderBy: { createdAt: "desc" }, take: 1 }, interests: { where: { serious: true }, select: { id: true } } },
@@ -34,7 +35,7 @@ export default async function Deals({ searchParams }: { searchParams: Promise<{ 
     take: 200,
   });
   const sellers = await db.contact.findMany({ where: { id: { in: deals.map((d) => d.sellerId).filter(Boolean) as string[] } }, select: { id: true, firstName: true, lastName: true } });
-  const states = await db.property.findMany({ where: { workspaceId: c.workspace.id }, distinct: ["state"], select: { state: true } });
+  const states = await db.property.findMany({ where: { workspaceId: c.workspace.id, ...propertyScope(c) }, distinct: ["state"], select: { state: true } });
 
   return (
     <div>

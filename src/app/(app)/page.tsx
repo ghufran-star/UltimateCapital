@@ -2,7 +2,7 @@ import Link from "next/link";
 import { AutoRefresh } from "@/components/client";
 import { Card, Empty, HotBadge, PageHeader, Stat, StatusBadge } from "@/components/ui";
 import { db } from "@/lib/db";
-import { pageCtx } from "@/lib/session";
+import { dealScope, pageCtx } from "@/lib/session";
 import { ago, fmtDate, usd } from "@/lib/util";
 
 export default async function CommandCentre() {
@@ -13,15 +13,15 @@ export default async function CommandCentre() {
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
   const [approvals, hot, nearAgreement, tasks, callsToday, textsToday, underContract, closing, paidMonth, pipeline, deadlines, packs, recent, running] = await Promise.all([
     db.approval.findMany({ where: { workspaceId: ws, status: "pending" }, orderBy: { createdAt: "asc" }, take: 6 }),
-    db.opportunity.findMany({ where: { workspaceId: ws, hotScore: { gte: 50 }, stage: { notIn: ["CLOSED"] } }, include: { property: true, interests: { where: { serious: true } } }, orderBy: { hotScore: "desc" }, take: 5 }),
-    db.opportunity.count({ where: { workspaceId: ws, verificationSentAt: { not: null }, approvedAt: null } }),
+    db.opportunity.findMany({ where: { workspaceId: ws, hotScore: { gte: 50 }, stage: { notIn: ["CLOSED"] }, ...dealScope(c) }, include: { property: true, interests: { where: { serious: true } } }, orderBy: { hotScore: "desc" }, take: 5 }),
+    db.opportunity.count({ where: { workspaceId: ws, verificationSentAt: { not: null }, approvedAt: null, ...dealScope(c) } }),
     db.task.findMany({ where: { workspaceId: ws, status: "open", dueAt: { lte: new Date(Date.now() + 864e5) }, OR: [{ assignee: null }, { assignee: c.user.id }, { assignee: { not: { startsWith: "agent:" } } }] }, orderBy: [{ priority: "asc" }, { dueAt: "asc" }], take: 8 }),
     db.interaction.count({ where: { workspaceId: ws, channel: "call", createdAt: { gte: dayAgo } } }),
     db.interaction.count({ where: { workspaceId: ws, channel: "sms", createdAt: { gte: dayAgo } } }),
-    db.opportunity.count({ where: { workspaceId: ws, stage: { in: ["UNDER_CONTRACT", "DISPOSITION"] } } }),
-    db.opportunity.count({ where: { workspaceId: ws, stage: "CLOSING" } }),
+    db.opportunity.count({ where: { workspaceId: ws, stage: { in: ["UNDER_CONTRACT", "DISPOSITION"] }, ...dealScope(c) } }),
+    db.opportunity.count({ where: { workspaceId: ws, stage: "CLOSING", ...dealScope(c) } }),
     db.payment.aggregate({ where: { workspaceId: ws, direction: "in", status: "received", updatedAt: { gte: monthStart } }, _sum: { amount: true } }),
-    db.opportunity.groupBy({ by: ["stage"], where: { workspaceId: ws }, _count: true }),
+    db.opportunity.groupBy({ by: ["stage"], where: { workspaceId: ws, ...dealScope(c) }, _count: true }),
     db.contract.findMany({ where: { workspaceId: ws, status: "effective", OR: [{ emdDueAt: { gte: now, lte: new Date(Date.now() + 5 * 864e5) } }, { optionEndsAt: { gte: now, lte: new Date(Date.now() + 5 * 864e5) } }, { closingAt: { gte: now, lte: new Date(Date.now() + 7 * 864e5) } }] }, take: 6 }),
     db.statePack.findMany({ where: { workspaceId: ws }, select: { state: true, status: true } }),
     db.interaction.findMany({ where: { workspaceId: ws, channel: { in: ["call", "sms", "email"] } }, include: { contact: true }, orderBy: { createdAt: "desc" }, take: 6 }),

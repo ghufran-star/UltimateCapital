@@ -6,6 +6,7 @@ import { db } from "@/lib/db";
 import { can, pageCtx } from "@/lib/session";
 import { label } from "@/lib/stages";
 import { ago, fmtDate, fullName } from "@/lib/util";
+import { campaignSpend, type CampaignSettings } from "@/lib/campaigns";
 import { campaignMembersAction, campaignStatusAction } from "../../../actions/ops";
 import { CampaignForm } from "../form";
 
@@ -21,6 +22,8 @@ export default async function CampaignPage({ params }: { params: Promise<{ id: s
     db.interaction.groupBy({ by: ["outcome"], where: { workspaceId: c.workspace.id, campaignId: id }, _count: true }),
     camp.state ? db.statePack.findUnique({ where: { workspaceId_state: { workspaceId: c.workspace.id, state: camp.state } } }) : null,
   ]);
+  const spend = await campaignSpend(c.workspace.id, id);
+  const budget = (camp.settings as unknown as CampaignSettings)?.budget || null;
   const n = (s: string) => counts.find((x) => x.status === s)?._count || 0;
   const total = counts.reduce((a, x) => a + x._count, 0);
   const writable = !c.workspace.isDemo && can(c.role, "campaigns");
@@ -57,6 +60,9 @@ export default async function CampaignPage({ params }: { params: Promise<{ id: s
         <Stat label="Done" value={n("done")} tone="good" />
         <Stat label="Blocked" value={n("blocked") + n("stopped")} sub="DNC, hours, consent" tone={n("blocked") ? "warn" : undefined} />
       </div>
+      <p className="text-sm text-muted">
+        Estimated spend ${spend.total.toLocaleString()} ({spend.minutes} call minutes, {spend.texts} texts){budget ? ` of a $${budget.toLocaleString()} budget` : ""}.
+      </p>
       {outcomes.length > 0 && (
         <Card title="Outcomes">
           <div className="flex flex-wrap gap-2">

@@ -64,6 +64,11 @@ export async function placeCall(
   if (await demoGuard(ws)) return "Blocked: demo workspace never places calls";
   const elig = await checkEligibility(ws, o.contactId, "ai_call");
   if (!elig.ok) {
+    if (elig.retryAt && o.memberId) {
+      // Campaign calls are re-queued on the member itself, so the dialer stays the only place a call is scheduled.
+      await db.campaignMember.update({ where: { id: o.memberId }, data: { status: "retry", nextAttemptAt: elig.retryAt, lastOutcome: "rescheduled" } }).catch(() => null);
+      return `Rescheduled: ${elig.reason}`;
+    }
     if (elig.retryAt) {
       await createTask(ws, {
         kind: "call",
@@ -193,11 +198,15 @@ export async function verifyTwilio(ws: string, url: string, params: Record<strin
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
-export async function sendSms(ws: string, o: { contactId: string; body: string; opportunityId?: string; skipChecks?: boolean }) {
+export async function sendSms(ws: string, o: { contactId: string; body: string; opportunityId?: string; skipChecks?: boolean; memberId?: string; campaignId?: string }) {
   if (await demoGuard(ws)) return "Blocked: demo workspace never sends texts";
   if (!o.body.trim()) return "Empty message";
   const elig = o.skipChecks ? { ok: true as const } : await checkEligibility(ws, o.contactId, "sms");
   if (!elig.ok) {
+    if ("retryAt" in elig && elig.retryAt && o.memberId) {
+      await db.campaignMember.update({ where: { id: o.memberId }, data: { status: "retry", nextAttemptAt: elig.retryAt, lastOutcome: "rescheduled", attempts: { decrement: 1 } } }).catch(() => null);
+      return `Rescheduled: ${elig.reason}`;
+    }
     if ("retryAt" in elig && elig.retryAt) {
       await createTask(ws, { kind: "sms", title: "Text (rescheduled to permitted hours)", contactId: o.contactId, dueAt: elig.retryAt, payload: o });
       return `Rescheduled: ${elig.reason}`;
@@ -220,7 +229,7 @@ export async function sendSms(ws: string, o: { contactId: string; body: string; 
     ...(base ? { StatusCallback: `${base.replace(/\/$/, "")}/api/webhooks/twilio/status?ws=${ws}` } : {}),
   });
   await db.interaction.create({
-    data: { workspaceId: ws, contactId: o.contactId, opportunityId: o.opportunityId, channel: "sms", direction: "outbound", provider: "twilio", providerRef: String(r.sid), fromAddr: from.number, toAddr: to, body },
+    data: { workspaceId: ws, contactId: o.contactId, opportunityId: o.opportunityId, campaignId: o.campaignId, channel: "sms", direction: "outbound", provider: "twilio", providerRef: String(r.sid), fromAddr: from.number, toAddr: to, body },
   });
   await db.contact.update({ where: { id: o.contactId }, data: { lastContactAt: new Date() } });
   return `Texted ${fullName(contact)}`;

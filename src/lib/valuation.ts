@@ -42,8 +42,18 @@ async function rentcast(ws: string, p: { address: string; city: string; state: s
     if (!res.ok) throw new Error(`RentCast ${res.status}`);
     return res.json() as Promise<Record<string, unknown>>;
   };
-  const value = await get("/avm/value");
-  const rent = await get("/avm/rent/long-term").catch(() => null);
+  // Each property's comps are paid for once per 14 days; the cache is keyed by every input that changes the answer.
+  const cacheKey = `rentcast:${q.toString()}`;
+  const hit = await db.apiCache.findUnique({ where: { key: cacheKey } });
+  let value: Record<string, unknown>;
+  let rent: Record<string, unknown> | null;
+  if (hit && Date.now() - +hit.createdAt < 14 * 864e5) {
+    ({ value, rent } = hit.value as unknown as { value: Record<string, unknown>; rent: Record<string, unknown> | null });
+  } else {
+    value = await get("/avm/value");
+    rent = await get("/avm/rent/long-term").catch(() => null);
+    await db.apiCache.upsert({ where: { key: cacheKey }, create: { key: cacheKey, value: json({ value, rent }) }, update: { value: json({ value, rent }), createdAt: new Date() } });
+  }
   const comps: Comp[] = ((value.comparables as Record<string, unknown>[]) || []).map((c) => ({
     address: String(c.formattedAddress || ""),
     price: Number(c.price || 0),
@@ -188,6 +198,15 @@ export async function runValuation(ws: string, opportunityId: string, opts: { ac
     if (opp.sellerLowest) await emit(ws, "opportunity.seller_moved", { type: "opportunity", id: opp.id });
   }
   return blocked ? `Blocked: ${blocked}` : `Max buy $${calc.maxBuy.toLocaleString()}`;
+}
+
+/** The deal's own resolved rules (defaults + every matching variation). Every price lock uses this. */
+export async function dealParams(ws: string, opportunityId: string) {
+  const opp = await db.opportunity.findUniqueOrThrow({ where: { id: opportunityId }, include: { property: true } });
+  const v = await latestValuation(opportunityId);
+  const rs = await activeRuleSet(ws);
+  const p = opp.property;
+  return resolveParams(rs.data, { state: p.state, market: p.city, zip: p.zip, propertyType: p.propertyType, dealType: opp.dealType, exit: opp.exitStrategy, conditionTier: p.conditionTier, occupancy: p.occupancy, titleFlags: p.titleFlags, arv: v?.arv ?? null }).params;
 }
 
 export async function latestValuation(opportunityId: string) {

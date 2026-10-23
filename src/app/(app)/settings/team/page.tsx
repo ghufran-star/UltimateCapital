@@ -1,4 +1,6 @@
 import { ActionButton, ActionForm, Submit } from "@/components/client";
+import { Combo } from "@/components/combo";
+import { US_STATES } from "@/lib/catalog";
 import { Card, Field, PageHeader } from "@/components/ui";
 import { loadSettings } from "@/lib/config";
 import { db } from "@/lib/db";
@@ -43,7 +45,7 @@ export default async function Team() {
                       </option>
                     ))}
                   </select>
-                  <input name="states" defaultValue={m.states.join(", ")} placeholder="States (all)" className="field w-28" />
+                  <Combo name="states" options={US_STATES} defaultValue={m.states} multiple joined placeholder="All states" className="min-w-56" />
                   <Submit className="btn btn-ghost btn-sm">Save</Submit>
                 </ActionForm>
               ) : (

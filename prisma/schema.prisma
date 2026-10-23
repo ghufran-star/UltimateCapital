@@ -234,6 +234,14 @@ model Property {
   excludedComps String[] @default([]) // comp addresses you ruled out
   manualComps  Json? // [{address, price, sqft, date}] comps you added by hand
   photos       String[] @default([])
+  situations   String[] @default([]) // seller situations / distress indicators (lib/catalog.ts SITUATIONS)
+  ownerType    String? // individual | joint | llc | trust | estate | bank | government
+  absentee     Boolean? // owner's mailing address differs from the property
+  estValue     Int? // estimated current value (as-is), from data provider or valuation
+  loanBalance  Int? // estimated open mortgage balance
+  lastSalePrice Int?
+  lastSaleDate DateTime?
+  lotAcres     Float?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -481,6 +489,9 @@ model Opportunity {
   approvedAt     DateTime?
   emdRecommendedAt DateTime?
   contractPrice  Int?
+  leadSource     String? // lib/catalog.ts LEAD_SOURCES
+  autopilotOff   Boolean   @default(false) // owner turned automation off for this deal
+  nextStep       String? // short human note of the next step
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 

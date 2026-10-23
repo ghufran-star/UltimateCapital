@@ -1,4 +1,5 @@
 import { ActionForm, Submit } from "@/components/client";
+import { conditionShort, label as catLabel, OCCUPANCY, shortType } from "@/lib/catalog";
 import { portalView } from "@/lib/portal";
 import { label } from "@/lib/stages";
 import { usd } from "@/lib/util";
@@ -27,7 +28,7 @@ export default async function DealPage({ params }: { params: Promise<{ token: st
         <div className="text-sm text-muted">
           {d.company || "Off-market deal"} · deal {code}
         </div>
-        <h1 className="text-2xl font-semibold">{d.anonymous ? `${label(p.propertyType)} in ${p.city} ${p.zip}` : `${p.address}, ${p.city} ${p.state} ${p.zip}`}</h1>
+        <h1 className="text-2xl font-semibold">{d.anonymous ? `${shortType(p.propertyType)} in ${p.city} ${p.zip}` : `${p.address}, ${p.city} ${p.state} ${p.zip}`}</h1>
         <p className="text-sm text-muted">
           For {d.it.contact.firstName || "you"}
           {d.anonymous ? " · address shared once we're under contract" : ""}
@@ -45,9 +46,9 @@ export default async function DealPage({ params }: { params: Promise<{ token: st
         <Fact l="Beds / baths" v={`${p.beds ?? "?"} / ${p.baths ?? "?"}`} />
         <Fact l="Size" v={p.sqft ? `${p.sqft.toLocaleString()} sq ft` : "?"} />
         <Fact l="Built" v={p.yearBuilt ? String(p.yearBuilt) : "?"} />
-        <Fact l="Condition" v={label(p.conditionTier) || "?"} />
-        <Fact l="Occupancy" v={label(p.occupancy) || "?"} />
-        <Fact l="Type" v={label(p.propertyType)} />
+        <Fact l="Condition" v={conditionShort(p.conditionTier)} />
+        <Fact l="Occupancy" v={catLabel(OCCUPANCY, p.occupancy)} />
+        <Fact l="Type" v={shortType(p.propertyType)} />
         <Fact l="ARV (estimate)" v={usd(d.calc?.arv)} />
         <Fact l="Repairs (estimate)" v={d.v?.repairsLikely ? `${usd(d.v.repairsLow)} – ${usd(d.v.repairsHigh)}` : "?"} />
         <Fact l="Price" v={usd(d.price)} strong />

@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { ActionForm, Submit } from "@/components/client";
+import { Combo } from "@/components/combo";
+import { US_STATES } from "@/lib/catalog";
 import { Card, PageHeader, StatusBadge } from "@/components/ui";
 import { db } from "@/lib/db";
 import { can, pageCtx } from "@/lib/session";
@@ -35,14 +37,7 @@ export default async function States() {
       {!ro && (
         <Card title="Add states">
           <ActionForm action={addStateAction}>
-            <select name="state" multiple size={8} className="field">
-              {STATES.filter((s) => !packs.some((p) => p.state === s.code)).map((s) => (
-                <option key={s.code} value={s.code}>
-                  {s.name}
-                </option>
-              ))}
-            </select>
-            <p className="text-xs text-muted">Hold Ctrl / ⌘ to pick several.</p>
+            <Combo name="state" options={US_STATES.filter((s) => !packs.some((p) => p.state === s.key))} multiple placeholder="Search and pick states" />
             <Submit className="btn btn-ghost">Add as drafts</Submit>
           </ActionForm>
         </Card>

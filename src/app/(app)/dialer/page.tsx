@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { label as catLabel, shortType, SITUATIONS } from "@/lib/catalog";
 import { ActionButton, ActionForm, Submit } from "@/components/client";
 import { Card, Empty, KV, Notice, PageHeader, StatusBadge } from "@/components/ui";
 import { agentForRole } from "@/lib/agents";
@@ -50,7 +51,7 @@ export default async function Dialer({ searchParams }: { searchParams: Promise<{
                 <KV
                   items={[
                     ["Property", `${prop.address}, ${prop.city} ${prop.state} ${prop.zip}`],
-                    ["Details", `${prop.beds ?? "?"} bd / ${prop.baths ?? "?"} ba · ${prop.sqft?.toLocaleString() ?? "?"} sq ft · ${label(prop.propertyType)}`],
+                    ["Details", `${prop.beds ?? "?"} bd / ${prop.baths ?? "?"} ba · ${prop.sqft?.toLocaleString() ?? "?"} sq ft · ${shortType(prop.propertyType)}${prop.situations.length ? ` · ${prop.situations.map((k) => catLabel(SITUATIONS, k)).join(", ")}` : ""}`],
                     ["Deal", opp ? <StatusBadge key="s" s={opp.stage} /> : "—"],
                     ["Asking", usd(opp?.askingPrice)],
                   ]}

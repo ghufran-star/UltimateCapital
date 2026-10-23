@@ -3,6 +3,7 @@ import { audit, json, notify } from "./audit";
 import { claudeJson } from "./claude";
 import { db } from "./db";
 import { createTask, emit } from "./engine";
+import { BUYER_STRATEGIES, PROPERTY_TYPES } from "./catalog";
 import { SELLER_STAGES } from "./stages";
 import { fullName } from "./util";
 
@@ -138,8 +139,8 @@ const SCHEMA = {
         markets: { type: "array", items: { type: "string" } },
         zips: { type: "array", items: { type: "string" } },
         states: { type: "array", items: { type: "string" } },
-        propertyTypes: { type: "array", items: { type: "string", enum: ["sfr", "condo_th", "2_4", "5_plus", "mobile", "land", "commercial"] } },
-        strategy: { type: "string", enum: ["flip", "rental", "brrrr", "redevelopment", "any"] },
+        propertyTypes: { type: "array", items: { type: "string", enum: PROPERTY_TYPES.map((t) => t.key) } },
+        strategy: { type: "string", enum: BUYER_STRATEGIES.map((t) => t.key) },
         minPrice: { type: "number" },
         maxPrice: { type: "number" },
         maxCondition: { type: "string", enum: ["cosmetic", "moderate", "heavy", "gut"] },

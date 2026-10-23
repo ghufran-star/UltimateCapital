@@ -1,4 +1,6 @@
 import { ActionButton, ActionForm, Submit } from "@/components/client";
+import { Combo } from "@/components/combo";
+import { US_STATES } from "@/lib/catalog";
 import { Card, PageHeader } from "@/components/ui";
 import { loadSettings } from "@/lib/config";
 import { db } from "@/lib/db";
@@ -16,7 +18,7 @@ export default async function Phones() {
       {n && <input type="hidden" name="phoneId" value={n.id} />}
       <input name="number" defaultValue={n?.number} placeholder="+12105550100" className="field md:col-span-2" />
       <input name="market" defaultValue={n?.market ?? ""} placeholder="Market" className="field" />
-      <input name="state" defaultValue={n?.state ?? ""} placeholder="State" maxLength={2} className="field" />
+      <Combo name="state" options={US_STATES} defaultValue={n?.state} emptyLabel="Any" placeholder="State" />
       <select name="inboundMode" defaultValue={n?.inboundMode || "agent"} className="field">
         <option value="agent">AI receptionist answers</option>
         <option value="forward">Forward to a person</option>

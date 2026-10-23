@@ -2,7 +2,8 @@ import { ActionForm, Submit } from "@/components/client";
 import { Field } from "@/components/ui";
 import type { Agent, Campaign } from "@prisma/client";
 import { DEFAULT_CAMPAIGN, type CampaignSettings } from "@/lib/campaigns";
-import { STATES } from "@/lib/states";
+import { Combo } from "@/components/combo";
+import { US_STATES } from "@/lib/catalog";
 import { saveCampaignAction } from "../../actions/ops";
 
 export function CampaignForm({ camp, agents, kind }: { camp?: Campaign; agents: Agent[]; kind?: string }) {
@@ -23,14 +24,7 @@ export function CampaignForm({ camp, agents, kind }: { camp?: Campaign; agents: 
           {camp && <input type="hidden" name="kind" value={k} />}
         </Field>
         <Field label="State" hint="Outreach only runs when this state's pack is active.">
-          <select name="state" defaultValue={camp?.state || "TX"} className="field">
-            <option value="">Any (each contact's own state)</option>
-            {STATES.map((x) => (
-              <option key={x.code} value={x.code}>
-                {x.name}
-              </option>
-            ))}
-          </select>
+          <Combo name="state" options={US_STATES} defaultValue={camp ? camp.state : "TX"} emptyLabel="Any (each contact's own state)" placeholder="Any state" />
         </Field>
         <Field label="Market (city)">
           <input name="market" defaultValue={camp?.market ?? ""} className="field" />

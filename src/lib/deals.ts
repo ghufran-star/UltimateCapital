@@ -1,4 +1,5 @@
 import { audit, json, notify } from "./audit";
+import { shortType } from "./catalog";
 import { setting } from "./config";
 import { db } from "./db";
 import { createTask, emit } from "./engine";
@@ -141,7 +142,7 @@ export async function sendVerificationPack(ws: string, opportunityId: string) {
     ``,
     `Seller: ${seller ? fullName(seller) : "?"} · lowest price indicated ${usd(opp.sellerLowest)} · asking ${usd(opp.askingPrice)}`,
     `Motivation: ${opp.motivation || "?"} · timeline: ${opp.timeline || "?"} · decision makers: ${opp.decisionMakers || "?"}`,
-    `Property: ${p.beds ?? "?"} bd / ${p.baths ?? "?"} ba · ${p.sqft ?? "?"} sq ft · built ${p.yearBuilt ?? "?"} · ${p.propertyType} · ${p.occupancy || "occupancy ?"} · condition ${p.conditionTier || "?"}`,
+    `Property: ${p.beds ?? "?"} bd / ${p.baths ?? "?"} ba · ${p.sqft ?? "?"} sq ft · built ${p.yearBuilt ?? "?"} · ${shortType(p.propertyType)} · ${p.occupancy || "occupancy ?"} · condition ${p.conditionTier || "?"}`,
     p.titleFlags.length ? `Title flags: ${p.titleFlags.join(", ")}` : "",
     ``,
     calc ? calc.formula.join("\n") : "Valuation incomplete.",

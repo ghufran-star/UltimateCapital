@@ -1,10 +1,12 @@
 import Link from "next/link";
+import { label as catLabel, OWNERSHIP_ROLES } from "@/lib/catalog";
 import { notFound } from "next/navigation";
 import { ActionButton, ActionForm, Submit } from "@/components/client";
 import { Card, Empty, KV, Notice, PageHeader, StatusBadge } from "@/components/ui";
 import { db } from "@/lib/db";
 import { checkEligibility } from "@/lib/eligibility";
-import { PROPERTY_TYPES } from "@/lib/rules";
+import { Combo } from "@/components/combo";
+import { BUYER_STRATEGIES, CONDITION_TIERS, FUNDING_METHODS, PROPERTY_TYPES, US_STATES } from "@/lib/catalog";
 import { can, pageCtx } from "@/lib/session";
 import { BUYER_OTHER, BUYER_STATUSES, label } from "@/lib/stages";
 import { ago, fmtDate, fullName, usd } from "@/lib/util";
@@ -100,7 +102,7 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
                             <input name="name" defaultValue={bb?.name || "Buy box"} className="field" />
                           </F>
                           <F l="States">
-                            <input name="states" defaultValue={bb?.states.join(", ")} className="field" placeholder="TX, OK" />
+                            <Combo name="states" options={US_STATES} defaultValue={bb?.states} multiple joined placeholder="All states" />
                           </F>
                           <F l="Markets (cities)">
                             <input name="markets" defaultValue={bb?.markets.join(", ")} className="field" placeholder="Houston, Katy" />
@@ -112,13 +114,7 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
                             <input name="excludedZips" defaultValue={bb?.excludedZips.join(", ")} className="field" />
                           </F>
                           <F l="Strategy">
-                            <select name="strategy" defaultValue={bb?.strategy || "any"} className="field">
-                              {["any", "flip", "rental", "brrrr", "redevelopment"].map((s) => (
-                                <option key={s} value={s}>
-                                  {label(s)}
-                                </option>
-                              ))}
-                            </select>
+                            <Combo name="strategy" options={BUYER_STRATEGIES} defaultValue={bb?.strategy || "any"} />
                           </F>
                           <F l="Min price">
                             <input name="minPrice" defaultValue={bb?.minPrice ?? ""} className="field" inputMode="numeric" />
@@ -127,14 +123,7 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
                             <input name="maxPrice" defaultValue={bb?.maxPrice ?? ""} className="field" inputMode="numeric" />
                           </F>
                           <F l="Worst condition accepted">
-                            <select name="maxCondition" defaultValue={bb?.maxCondition || ""} className="field">
-                              <option value="">Any</option>
-                              {["cosmetic", "moderate", "heavy", "gut"].map((s) => (
-                                <option key={s} value={s}>
-                                  {label(s)}
-                                </option>
-                              ))}
-                            </select>
+                            <Combo name="maxCondition" options={CONDITION_TIERS} defaultValue={bb?.maxCondition} emptyLabel="Any condition" placeholder="Any condition" />
                           </F>
                           <F l="Min beds">
                             <input name="minBeds" defaultValue={bb?.minBeds ?? ""} className="field" inputMode="numeric" />
@@ -162,13 +151,9 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
                             <input name="minCapRate" defaultValue={bb?.minCapRate != null ? Math.round(bb.minCapRate * 1000) / 10 : ""} className="field" inputMode="decimal" />
                           </F>
                         </div>
-                        <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm">
-                          {PROPERTY_TYPES.map((t) => (
-                            <label key={t.key} className="flex items-center gap-1">
-                              <input type="checkbox" name="propertyTypes" value={t.key} defaultChecked={bb?.propertyTypes.includes(t.key)} /> {t.label}
-                            </label>
-                          ))}
-                        </div>
+                        <F l="Property types they buy (blank = any)">
+                          <Combo name="propertyTypes" options={PROPERTY_TYPES} defaultValue={bb?.propertyTypes} multiple placeholder="Any type" />
+                        </F>
                         <div className="flex flex-wrap gap-x-4 text-sm">
                           {["vacant", "tenant", "owner"].map((o) => (
                             <label key={o} className="flex items-center gap-1">
@@ -241,7 +226,7 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
                         <span>
                           <span className="font-medium">{o.property.address}</span>
                           <span className="block text-xs text-muted">
-                            {o.property.city}, {o.property.state} · {label(o.role)}
+                            {o.property.city}, {o.property.state} · {catLabel(OWNERSHIP_ROLES, o.role)}
                           </span>
                         </span>
                         {o.property.opportunities[0] && <StatusBadge s={o.property.opportunities[0].stage} />}
@@ -310,7 +295,7 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
                   <input name="city" defaultValue={ct.city ?? ""} className="field" />
                 </F>
                 <F l="State">
-                  <input name="state" defaultValue={ct.state ?? ""} className="field" maxLength={2} />
+                  <Combo name="state" options={US_STATES} defaultValue={ct.state} emptyLabel="None" placeholder="State" />
                 </F>
               </div>
               <F l="Assigned to">
@@ -360,13 +345,7 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
                     </F>
                   </div>
                   <F l="Funding">
-                    <select name="fundingMethod" defaultValue={ct.fundingMethod ?? ""} className="field">
-                      <option value="">Unknown</option>
-                      <option value="cash">Cash</option>
-                      <option value="hard_money">Hard money</option>
-                      <option value="private">Private money</option>
-                      <option value="conventional">Conventional</option>
-                    </select>
+                    <Combo name="fundingMethod" options={FUNDING_METHODS} defaultValue={ct.fundingMethod} emptyLabel="Unknown" placeholder="Unknown" />
                   </F>
                   <label className="flex items-center gap-2 text-sm">
                     <input type="checkbox" name="fundsVerified" defaultChecked={ct.fundsVerified} /> Proof of funds verified

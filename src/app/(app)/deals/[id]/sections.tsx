@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { ActionButton, ActionForm, Submit } from "@/components/client";
+import { Combo } from "@/components/combo";
+import { CONDITION_TIERS, OCCUPANCY, OWNER_TYPES, PROPERTY_TYPES, SITUATIONS, TITLE_FLAGS } from "@/lib/catalog";
 import { SignaturePad } from "@/components/signature";
 import { Card, Empty, KV, Notice, StatusBadge } from "@/components/ui";
 import type { Valuation } from "@prisma/client";
@@ -119,35 +121,52 @@ export function NumbersTab({ opp, v, calc, params, writable, playbook }: { opp: 
               <F l="Year built">
                 <input name="yearBuilt" defaultValue={p.yearBuilt ?? ""} className="field" inputMode="numeric" />
               </F>
-              <F l="Type">
-                <select name="propertyType" defaultValue={p.propertyType} className="field">
-                  {["sfr", "condo_th", "2_4", "5_plus", "mobile", "land", "commercial"].map((t) => (
-                    <option key={t} value={t}>
-                      {label(t)}
-                    </option>
-                  ))}
-                </select>
-              </F>
+              <div className="col-span-2">
+                <F l="Type">
+                  <Combo name="propertyType" options={PROPERTY_TYPES} defaultValue={p.propertyType} />
+                </F>
+              </div>
               <F l="Occupancy">
-                <select name="occupancy" defaultValue={p.occupancy ?? ""} className="field">
+                <Combo name="occupancy" options={OCCUPANCY} defaultValue={p.occupancy} emptyLabel="Unknown" placeholder="Unknown" />
+              </F>
+              <F l="Rehab needed (overall)">
+                <Combo name="conditionTier" options={CONDITION_TIERS} defaultValue={p.conditionTier} emptyLabel="Unknown" placeholder="Unknown" />
+              </F>
+              <div className="col-span-2">
+                <F l="Title issues">
+                  <Combo name="titleFlags" options={TITLE_FLAGS} defaultValue={p.titleFlags} multiple allowCustom placeholder="None known" />
+                </F>
+              </div>
+              <div className="col-span-2 md:col-span-4">
+                <input type="hidden" name="situationsForm" value="1" />
+                <F l="Seller situation">
+                  <Combo name="situations" options={SITUATIONS} defaultValue={p.situations} multiple placeholder="Pre-foreclosure, probate, tired landlord…" />
+                </F>
+              </div>
+              <F l="Owner type">
+                <Combo name="ownerType" options={OWNER_TYPES} defaultValue={p.ownerType} emptyLabel="Unknown" placeholder="Unknown" />
+              </F>
+              <F l="Absentee owner">
+                <select name="absentee" defaultValue={p.absentee === true ? "yes" : p.absentee === false ? "no" : ""} className="field">
                   <option value="">Unknown</option>
-                  <option value="vacant">Vacant</option>
-                  <option value="owner">Owner</option>
-                  <option value="tenant">Tenant</option>
+                  <option value="yes">Yes</option>
+                  <option value="no">No</option>
                 </select>
               </F>
-              <F l="Overall condition">
-                <select name="conditionTier" defaultValue={p.conditionTier ?? ""} className="field">
-                  <option value="">Unknown</option>
-                  {["cosmetic", "moderate", "heavy", "gut"].map((t) => (
-                    <option key={t} value={t}>
-                      {label(t)}
-                    </option>
-                  ))}
-                </select>
+              <F l="Est. value (as-is)">
+                <input name="estValue" defaultValue={p.estValue ?? ""} className="field tnum" inputMode="numeric" />
               </F>
-              <F l="Title flags">
-                <input name="titleFlags" defaultValue={p.titleFlags.join(", ")} className="field" placeholder="probate, liens" />
+              <F l="Mortgage balance">
+                <input name="loanBalance" defaultValue={p.loanBalance ?? ""} className="field tnum" inputMode="numeric" />
+              </F>
+              <F l="Last sale price">
+                <input name="lastSalePrice" defaultValue={p.lastSalePrice ?? ""} className="field tnum" inputMode="numeric" />
+              </F>
+              <F l="Last sale date">
+                <input type="date" name="lastSaleDate" defaultValue={p.lastSaleDate ? p.lastSaleDate.toISOString().slice(0, 10) : ""} className="field" />
+              </F>
+              <F l="Lot (acres)">
+                <input name="lotAcres" defaultValue={p.lotAcres ?? ""} className="field" inputMode="decimal" />
               </F>
               <F l="County">
                 <input name="county" defaultValue={p.county ?? ""} className="field" />
@@ -169,8 +188,8 @@ export function NumbersTab({ opp, v, calc, params, writable, playbook }: { opp: 
                   <select name={`tier_${it.key}`} defaultValue={items[it.key]?.tier || "unknown"} className="rounded-md bg-card px-1 py-0.5 text-xs">
                     <option value="unknown">—</option>
                     <option value="none">Fine</option>
-                    <option value="cosmetic">Cosmetic</option>
-                    <option value="moderate">Moderate</option>
+                    <option value="cosmetic">Light</option>
+                    <option value="moderate">Medium</option>
                     <option value="heavy">Heavy</option>
                     <option value="gut">Replace</option>
                   </select>

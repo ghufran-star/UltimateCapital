@@ -78,7 +78,7 @@ export async function autopilotTick() {
 async function runDealSteps(ws: string, cfg: AutopilotConfig) {
   const rules = cfg.steps.filter((r) => r.on);
   if (!rules.length) return 0;
-  const opps = await db.opportunity.findMany({ where: { workspaceId: ws, stage: { in: rules.map((r) => r.stage) }, sellerId: { not: null }, OR: [{ exception: null }, { exception: { notIn: STOP } }] }, take: 500 });
+  const opps = await db.opportunity.findMany({ where: { workspaceId: ws, autopilotOff: false, stage: { in: rules.map((r) => r.stage) }, sellerId: { not: null }, OR: [{ exception: null }, { exception: { notIn: STOP } }] }, take: 500 });
   let n = 0;
   for (const o of opps) {
     const rule = rules.find((r) => r.stage === o.stage)!;
@@ -123,7 +123,7 @@ async function runNurture(ws: string, cfg: AutopilotConfig) {
   if (!cfg.nurtureDays) return 0;
   const cutoff = new Date(Date.now() - cfg.nurtureDays * 864e5);
   const opps = await db.opportunity.findMany({
-    where: { workspaceId: ws, sellerId: { not: null }, OR: [{ exception: "DECLINED" }, { exception: "CALLBACK" }, { stage: { in: ["ENGAGED", "QUALIFIED"] } }] },
+    where: { workspaceId: ws, autopilotOff: false, sellerId: { not: null }, OR: [{ exception: "DECLINED" }, { exception: "CALLBACK" }, { stage: { in: ["ENGAGED", "QUALIFIED"] } }] },
     take: 500,
   });
   let n = 0;

@@ -4,14 +4,14 @@ import { db } from "./db";
 import { activePack } from "./eligibility";
 import { createTask } from "./engine";
 import { Calculation, investorView, TIER_ORDER, Tier } from "./rules";
-import { PROPERTY_TYPES } from "./rules";
+import { conditionShort, shortType, typeCovered } from "./catalog";
 import { fullName, usd } from "./util";
 import { dealParams, latestValuation } from "./valuation";
 
 // Buyer matching (hard buy-box filters, then ranking), hot-deal score, and disposition outreach
 // that respects each investor's contact limits, buying timeline and fatigue.
 
-const typeLabel = (k: string) => PROPERTY_TYPES.find((t) => t.key === k)?.label || k;
+const typeLabel = (k: string) => shortType(k);
 
 export async function runMatching(ws: string, opportunityId: string) {
   const opp = await db.opportunity.findUniqueOrThrow({ where: { id: opportunityId }, include: { property: true } });
@@ -40,7 +40,7 @@ export async function runMatching(ws: string, opportunityId: string) {
       if (!has(box.markets, p.city)) fail(`market ${p.city}`);
       if (box.zips.length && !box.zips.includes(p.zip)) fail(`ZIP ${p.zip}`);
       if (box.excludedZips.includes(p.zip)) fail(`excluded ZIP ${p.zip}`);
-      if (!has(box.propertyTypes, p.propertyType)) fail(typeLabel(p.propertyType));
+      if (!typeCovered(box.propertyTypes, p.propertyType)) fail(typeLabel(p.propertyType));
       if (box.minPrice && price < box.minPrice) fail(`price below their ${usd(box.minPrice)} minimum`);
       if (box.maxPrice && floor > box.maxPrice) fail(`even our floor ${usd(floor)} is above their max ${usd(box.maxPrice)}`);
       if (box.minBeds && (p.beds || 0) < box.minBeds) fail(`${p.beds ?? "?"} beds`);
@@ -48,13 +48,14 @@ export async function runMatching(ws: string, opportunityId: string) {
       if (box.minSqft && (p.sqft || 0) < box.minSqft) fail(`${p.sqft ?? "?"} sq ft`);
       if (box.maxCondition && p.conditionTier && TIER_ORDER.indexOf(p.conditionTier as Tier) > TIER_ORDER.indexOf(box.maxCondition as Tier)) fail(`${p.conditionTier} rehab is more than they take on`);
       if (box.occupancyOk.length && p.occupancy && !box.occupancyOk.includes(p.occupancy)) fail(`${p.occupancy}-occupied`);
-      if (box.strategy && box.strategy !== "any" && opp.exitStrategy === "rental" && box.strategy === "flip") fail("rental deal, flip buyer");
+      const rentalDeal = ["rental", "brrrr", "str"].includes(opp.exitStrategy);
+      if (box.strategy && box.strategy !== "any" && rentalDeal && box.strategy === "flip") fail("rental deal, flip buyer");
       // The investor's own profit requirement (net and/or gross) at the price we'd present.
       const ip = { ...params, investor: { ...params.investor, profitBasis: (box.profitBasis as "net" | "gross" | "both") || params.investor.profitBasis, minProfitPct: box.minProfitPct ?? params.investor.minProfitPct, minNetProfit: box.minNetProfit ?? params.investor.minNetProfit } };
       const effectivePrice = box.maxPrice ? Math.min(price, box.maxPrice) : price;
       const iv = investorView(Math.max(effectivePrice, floor), calc.arv, calc.repairs, ip, v.rent);
       if (!iv.meets) fail(`their ${ip.investor.profitBasis} profit at ${usd(iv.price)} would be ${usd(iv.net)} (${Math.round(iv.netPct * 100)}%)`);
-      if (opp.exitStrategy === "rental" && box.minCapRate && (iv.capRate || 0) < box.minCapRate) fail(`cap rate ${((iv.capRate || 0) * 100).toFixed(1)}%`);
+      if (rentalDeal && box.minCapRate && (iv.capRate || 0) < box.minCapRate) fail(`cap rate ${((iv.capRate || 0) * 100).toFixed(1)}%`);
       if (why.length) continue;
       const reasons = [`✓ fits "${box.name}"`, `✓ investor net ${usd(iv.net)} (${Math.round(iv.netPct * 100)}%) at ${usd(iv.price)}`];
       let score = 50;
@@ -185,7 +186,7 @@ export async function dealTeaser(ws: string, opportunityId: string, mode: string
   const parts = [
     `${p.beds ?? "?"}/${p.baths ?? "?"} ${typeLabel(p.propertyType).toLowerCase()} ${where}`,
     p.sqft ? `${p.sqft.toLocaleString()} sq ft` : "",
-    p.conditionTier ? `${p.conditionTier} rehab` : "",
+    p.conditionTier ? `${conditionShort(p.conditionTier).toLowerCase()} rehab` : "",
     v?.arv ? `ARV est. ${usd(v.arv)}` : "",
     v?.repairsLikely ? `repairs est. ${usd(v.repairsLikely)}` : "",
     price ? `around ${usd(price)}` : "",

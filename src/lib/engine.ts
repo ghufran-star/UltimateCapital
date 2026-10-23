@@ -266,7 +266,16 @@ export async function runTasks(limit = 10) {
     take: limit,
   });
   let n = 0;
+  const CONTACT_KINDS = ["call", "sms", "email", "buyer_outreach", "demand_campaign"];
   for (const t of due) {
+    // A deal with autopilot off gets no automatic contact; the task waits for someone to run it.
+    if (CONTACT_KINDS.includes(t.kind) && t.entityType === "opportunity" && t.entityId) {
+      const o = await db.opportunity.findUnique({ where: { id: t.entityId }, select: { autopilotOff: true } });
+      if (o?.autopilotOff) {
+        await db.task.update({ where: { id: t.id }, data: { dueAt: new Date(Date.now() + 864e5), result: "Waiting: autopilot is off for this deal. Run it yourself from the task list." } });
+        continue;
+      }
+    }
     const claimed = await db.task.updateMany({ where: { id: t.id, status: "open" }, data: { status: "running", attempts: { increment: 1 } } });
     if (!claimed.count) continue;
     n++;

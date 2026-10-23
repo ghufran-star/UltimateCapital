@@ -1,7 +1,10 @@
 import Link from "next/link";
+import { conditionShort, label as catLabel, OCCUPANCY, shortType } from "@/lib/catalog";
 import { notFound } from "next/navigation";
 import { ActionButton, ActionForm, Submit } from "@/components/client";
+import { Combo } from "@/components/combo";
 import { Card, HotBadge, KV, Notice, PageHeader, StatusBadge, Tabs } from "@/components/ui";
+import { DEAL_TYPES, EXIT_STRATEGIES, LEAD_SOURCES } from "@/lib/catalog";
 import { db } from "@/lib/db";
 import { activePack } from "@/lib/eligibility";
 import { nearAgreement, resolveParams, type Calculation } from "@/lib/rules";
@@ -59,6 +62,7 @@ export default async function DealPage({ params, searchParams }: { params: Promi
           <span className="flex flex-wrap items-center gap-2">
             {opp.property.city}, {opp.property.state} {opp.property.zip}
             <StatusBadge s={opp.stage} />
+            {opp.autopilotOff && <span className="badge badge-warn">Autopilot off</span>}
             {opp.exception && <StatusBadge s={opp.exception} />}
             <HotBadge score={opp.hotScore} />
             {!pack && <span className="badge badge-bad">{opp.property.state} pack not active</span>}
@@ -176,19 +180,16 @@ export default async function DealPage({ params, searchParams }: { params: Promi
                     <input name="sellerLowest" defaultValue={opp.sellerLowest ?? ""} className="field tnum" inputMode="numeric" />
                   </L>
                   <L label="Deal type">
-                    <select name="dealType" defaultValue={opp.dealType} className="field">
-                      {["assignment", "double_close", "novation", "subject_to", "seller_finance", "wholetail"].map((d) => (
-                        <option key={d} value={d}>
-                          {label(d)}
-                        </option>
-                      ))}
-                    </select>
+                    <Combo name="dealType" options={DEAL_TYPES} defaultValue={opp.dealType} disabled={!writable} />
                   </L>
                   <L label="Investor exit">
-                    <select name="exitStrategy" defaultValue={opp.exitStrategy} className="field">
-                      <option value="flip">Flip</option>
-                      <option value="rental">Rental</option>
-                    </select>
+                    <Combo name="exitStrategy" options={EXIT_STRATEGIES} defaultValue={opp.exitStrategy} disabled={!writable} />
+                  </L>
+                  <L label="Lead source">
+                    <Combo name="leadSource" options={LEAD_SOURCES} defaultValue={opp.leadSource} emptyLabel="Unknown" placeholder="Unknown" disabled={!writable} />
+                  </L>
+                  <L label="Next step">
+                    <input name="nextStep" defaultValue={opp.nextStep ?? ""} className="field" placeholder="e.g. walkthrough Tuesday 2pm" />
                   </L>
                   <L label="Motivation">
                     <input name="motivation" defaultValue={opp.motivation ?? ""} className="field" />
@@ -202,6 +203,13 @@ export default async function DealPage({ params, searchParams }: { params: Promi
                     </L>
                   </div>
                 </div>
+                <label className="flex items-start gap-2 rounded-xl bg-soft px-3 py-2 text-sm">
+                  <input type="checkbox" name="autopilotOff" defaultChecked={opp.autopilotOff} disabled={!writable} className="mt-1" />
+                  <span>
+                    <span className="font-medium">Autopilot off for this deal</span>
+                    <span className="block text-xs text-muted">No automatic calls, texts, emails or buyer outreach. Valuations and matching still update; queued contact waits for you to run it.</span>
+                  </span>
+                </label>
                 {writable && <Submit>Save</Submit>}
               </ActionForm>
             </Card>
@@ -252,12 +260,12 @@ export default async function DealPage({ params, searchParams }: { params: Promi
             <Card title="Property">
               <KV
                 items={[
-                  ["Type", label(opp.property.propertyType)],
+                  ["Type", shortType(opp.property.propertyType)],
                   ["Beds / baths", `${opp.property.beds ?? "?"} / ${opp.property.baths ?? "?"}`],
                   ["Sq ft", opp.property.sqft?.toLocaleString()],
                   ["Year built", opp.property.yearBuilt],
-                  ["Occupancy", label(opp.property.occupancy)],
-                  ["Condition", label(opp.property.conditionTier)],
+                  ["Occupancy", catLabel(OCCUPANCY, opp.property.occupancy)],
+                  ["Rehab needed", conditionShort(opp.property.conditionTier)],
                   ["Title flags", opp.property.titleFlags.join(", ") || "none"],
                 ]}
               />

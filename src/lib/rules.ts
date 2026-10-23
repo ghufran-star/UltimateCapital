@@ -1,38 +1,23 @@
 // Deal Rules engine: owner-editable, layered, versioned, deterministic.
 // Everything here is pure calculation so it can run in the live preview and on the server alike.
 
-export const PROPERTY_TYPES = [
-  { key: "sfr", label: "Single-family" },
-  { key: "condo_th", label: "Condo / townhouse" },
-  { key: "2_4", label: "2–4 units" },
-  { key: "5_plus", label: "5+ units" },
-  { key: "mobile", label: "Mobile home with land" },
-  { key: "land", label: "Land / lots" },
-  { key: "commercial", label: "Commercial" },
-] as const;
+import { DEAL_TYPES as CATALOG_DEALS, EXIT_STRATEGIES, PROPERTY_TYPES as CATALOG_TYPES, typeCovered } from "./catalog";
 
-export const DEAL_TYPES = [
-  { key: "assignment", label: "Assignment" },
-  { key: "double_close", label: "Double close" },
-  { key: "novation", label: "Novation" },
-  { key: "subject_to", label: "Subject-to" },
-  { key: "seller_finance", label: "Seller finance" },
-  { key: "wholetail", label: "Wholetail" },
-] as const;
+export const PROPERTY_TYPES = CATALOG_TYPES;
+export const DEAL_TYPES = CATALOG_DEALS;
 
 export const CONDITION_TIERS = [
-  { key: "cosmetic", label: "Cosmetic" },
-  { key: "moderate", label: "Moderate" },
+  { key: "cosmetic", label: "Light" },
+  { key: "moderate", label: "Medium" },
   { key: "heavy", label: "Heavy" },
   { key: "gut", label: "Full gut" },
 ] as const;
 export type Tier = "none" | "cosmetic" | "moderate" | "heavy" | "gut";
 export const TIER_ORDER: Tier[] = ["none", "cosmetic", "moderate", "heavy", "gut"];
 
-export const EXITS = [
-  { key: "flip", label: "Flip" },
-  { key: "rental", label: "Rental" },
-] as const;
+export const EXITS = EXIT_STRATEGIES;
+/** Exits valued on rent (cap rate) rather than resale. */
+export const RENTAL_EXITS = ["rental", "brrrr", "str"];
 
 // ---------- Types ----------
 
@@ -196,7 +181,7 @@ export function matches(when: Condition, f: DealFacts): boolean {
   if (!inList(when.states, f.state)) return false;
   if (!inList(when.markets, f.market)) return false;
   if (!inList(when.zips, f.zip)) return false;
-  if (!inList(when.propertyTypes, f.propertyType)) return false;
+  if (!typeCovered(when.propertyTypes, f.propertyType)) return false;
   if (!inList(when.dealTypes, f.dealType)) return false;
   if (!inList(when.exits, f.exit)) return false;
   if (!inList(when.conditionTiers, f.conditionTier)) return false;
@@ -333,7 +318,7 @@ export function investorView(price: number, arv: number, repairs: number, p: Pri
 /** Highest price an investor can pay and still meet their minimum (closed form; net is linear in price). */
 export function investorMaxPrice(arv: number, repairs: number, p: PricingParams, exit: string, rent?: number | null) {
   const i = p.investor;
-  if (exit === "rental" && rent) {
+  if (RENTAL_EXITS.includes(exit) && rent) {
     const noi = rent * 12 * (1 - p.rental.expenseRatio);
     return Math.max(0, Math.floor(noi / p.rental.minCapRate - repairs));
   }

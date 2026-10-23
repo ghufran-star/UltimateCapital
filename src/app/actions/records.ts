@@ -13,6 +13,15 @@ import { assertDeal, requireCtx } from "@/lib/session";
 import { e164, int, list, num, str } from "@/lib/util";
 import { runValuation } from "@/lib/valuation";
 import { act } from "./util";
+import { normalizeType, SITUATIONS } from "@/lib/catalog";
+
+const money = (v: string) => Math.round(Number(v.replace(/[$,\s]/g, ""))) || null;
+/** "Pre-Foreclosure; Vacant | Tired Landlord" → situation keys. */
+function situationsFrom(v: string) {
+  if (!v) return [];
+  const parts = v.toLowerCase().split(/[;|,]/).map((x) => x.trim()).filter(Boolean);
+  return [...new Set(parts.map((x) => SITUATIONS.find((o) => o.key === x.replace(/[ -]/g, "_") || o.label.toLowerCase().startsWith(x))?.key).filter(Boolean) as string[])];
+}
 
 // ---------- CSV ----------
 
@@ -98,6 +107,12 @@ export async function createPropertyAction(_: ActionState, fd: FormData): Promis
         yearBuilt: int(fd.get("yearBuilt")),
         occupancy: str(fd.get("occupancy")),
         conditionTier: str(fd.get("conditionTier")),
+        lotAcres: num(fd.get("lotAcres")),
+        situations: fd.getAll("situations").map(String).filter(Boolean),
+        ownerType: str(fd.get("ownerType")),
+        absentee: fd.get("absentee") === "yes" ? true : fd.get("absentee") === "no" ? false : null,
+        estValue: int(fd.get("estValue")),
+        loanBalance: int(fd.get("loanBalance")),
       },
     });
     let sellerId: string | null = null;
@@ -109,7 +124,7 @@ export async function createPropertyAction(_: ActionState, fd: FormData): Promis
     }
     const opp = await createOpportunity(ws, { propertyId: p.id, sellerId, actor: c.user.id, dealType: str(fd.get("dealType")) || "assignment", exitStrategy: str(fd.get("exitStrategy")) || "flip" });
     const asking = int(fd.get("askingPrice"));
-    if (asking) await db.opportunity.update({ where: { id: opp.id }, data: { askingPrice: asking } });
+    await db.opportunity.update({ where: { id: opp.id }, data: { askingPrice: asking, leadSource: str(fd.get("leadSource")) } });
     await audit(ws, c.user.id, "property_created", { type: "property", id: p.id });
     return { ok: true, redirect: `/deals/${opp.id}` };
   });
@@ -137,7 +152,7 @@ export async function importSellersAction(_: ActionState, fd: FormData): Promise
       let p = await db.property.findFirst({ where: { workspaceId: ws, address: { equals: address, mode: "insensitive" }, zip } });
       if (!p)
         p = await db.property.create({
-          data: { workspaceId: ws, address, city, state, zip, county: pick(r, "county") || null, propertyType: pick(r, "property_type", "type") || "sfr", beds: Number(pick(r, "beds", "bedrooms")) || null, baths: Number(pick(r, "baths", "bathrooms")) || null, sqft: Number(pick(r, "sqft", "square_feet", "living_area")) || null, yearBuilt: Number(pick(r, "year_built")) || null, occupancy: pick(r, "occupancy") || null, conditionTier: pick(r, "condition") || null },
+          data: { workspaceId: ws, address, city, state, zip, county: pick(r, "county") || null, propertyType: normalizeType(pick(r, "property_type", "type", "property_use", "land_use")), beds: Number(pick(r, "beds", "bedrooms")) || null, baths: Number(pick(r, "baths", "bathrooms")) || null, sqft: Number(pick(r, "sqft", "square_feet", "living_area")) || null, yearBuilt: Number(pick(r, "year_built")) || null, occupancy: pick(r, "occupancy") || null, conditionTier: pick(r, "condition") || null, estValue: money(pick(r, "est_value", "estimated_value", "value", "avm")), loanBalance: money(pick(r, "mortgage_balance", "loan_balance", "open_mortgage_balance", "est_mortgage_balance")), situations: situationsFrom(pick(r, "situations", "lists", "list", "distress", "tags")), absentee: /^(y|yes|true|1)$/i.test(pick(r, "absentee", "absentee_owner")) ? true : null },
         });
       const first = pick(r, "first_name", "owner_first_name", "firstname");
       const last = pick(r, "last_name", "owner_last_name", "lastname");
@@ -185,8 +200,20 @@ export async function updatePropertyAction(_: ActionState, fd: FormData): Promis
         county: str(fd.get("county")),
         parcel: str(fd.get("parcel")),
         legalDesc: str(fd.get("legalDesc")),
-        titleFlags: list(fd.get("titleFlags")),
+        titleFlags: fd.getAll("titleFlags").flatMap((v) => String(v).split(",")).map((v) => v.trim()).filter(Boolean),
         condition: json({ ...prevCondition, items }),
+        ...(fd.has("situationsForm")
+          ? {
+              situations: fd.getAll("situations").map(String).filter(Boolean),
+              ownerType: str(fd.get("ownerType")),
+              absentee: fd.get("absentee") === "yes" ? true : fd.get("absentee") === "no" ? false : null,
+              estValue: int(fd.get("estValue")),
+              loanBalance: int(fd.get("loanBalance")),
+              lotAcres: num(fd.get("lotAcres")),
+              lastSalePrice: int(fd.get("lastSalePrice")),
+              lastSaleDate: str(fd.get("lastSaleDate")) ? new Date(String(fd.get("lastSaleDate"))) : null,
+            }
+          : {}),
       },
     });
     await audit(c.workspace.id, c.user.id, "property_updated", { type: "property", id });
@@ -471,6 +498,9 @@ export async function updateDealAction(_: ActionState, fd: FormData): Promise<Ac
         timeline: str(fd.get("timeline")),
         decisionMakers: str(fd.get("decisionMakers")),
         assigneeId: str(fd.get("assigneeId")),
+        leadSource: str(fd.get("leadSource")),
+        nextStep: str(fd.get("nextStep")),
+        autopilotOff: fd.get("autopilotOff") === "on",
       },
     });
     await audit(ws, c.user.id, "deal_updated", { type: "opportunity", id });

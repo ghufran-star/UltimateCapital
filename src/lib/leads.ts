@@ -1,4 +1,5 @@
 import { audit, json } from "./audit";
+import { normalizeType } from "./catalog";
 import { loadSettings } from "./config";
 import { db } from "./db";
 import { createOpportunity } from "./deals";
@@ -20,6 +21,9 @@ export const SELLER_LISTS = [
   { key: "tired-landlord", label: "Tired landlords" },
 ] as const;
 
+/** Lead list → seller situation tag (lib/catalog.ts SITUATIONS). */
+const LIST_SITUATION: Record<string, string> = { "absentee-owner": "absentee", "high-equity": "high_equity", "free-and-clear": "free_clear", vacant: "vacant", preforeclosure: "pre_foreclosure", "tax-default": "tax_delinquent", inherited: "probate", "senior-owner": "senior", "tired-landlord": "tired_landlord" };
+
 export type FoundProperty = {
   address: string;
   city: string;
@@ -35,6 +39,11 @@ export type FoundProperty = {
   lastSalePrice?: number;
   lastSaleDate?: string;
   cashSale?: boolean;
+  estValue?: number;
+  loanBalance?: number;
+  absentee?: boolean;
+  ownerType?: string;
+  situations?: string[];
   phones?: { number: string; type?: string; dnc?: boolean }[];
   emails?: string[];
 };
@@ -133,7 +142,7 @@ export async function importSellerList(ws: string, o: { query: string; lists: st
   const contactIds: string[] = [];
   for (const [i, f] of found.entries()) {
     let p = await db.property.findFirst({ where: { workspaceId: ws, address: { equals: f.address, mode: "insensitive" }, zip: f.zip } });
-    if (!p) p = await db.property.create({ data: { workspaceId: ws, address: f.address, city: f.city, state: f.state.toUpperCase().slice(0, 2), zip: f.zip, county: f.county || null, propertyType: f.propertyType || "sfr", beds: f.beds ?? null, baths: f.baths ?? null, sqft: f.sqft ?? null, yearBuilt: f.yearBuilt ?? null } });
+    if (!p) p = await db.property.create({ data: { workspaceId: ws, address: f.address, city: f.city, state: f.state.toUpperCase().slice(0, 2), zip: f.zip, county: f.county || null, propertyType: normalizeType(f.propertyType), beds: f.beds ?? null, baths: f.baths ?? null, sqft: f.sqft ?? null, yearBuilt: f.yearBuilt ?? null, estValue: f.estValue ?? null, loanBalance: f.loanBalance ?? null, absentee: f.absentee ?? null, ownerType: f.ownerType ?? null, lastSalePrice: f.lastSalePrice ?? null, lastSaleDate: f.lastSaleDate && !isNaN(Date.parse(f.lastSaleDate)) ? new Date(f.lastSaleDate) : null, situations: [...new Set([...(f.situations || []), ...o.lists.map((l) => LIST_SITUATION[l]).filter(Boolean)])] } });
     const people = traced[i]?.length ? traced[i] : f.owners.map((x) => ({ first: x.first, last: x.last || x.company || "", phones: f.phones || [], emails: f.emails || [] }));
     let sellerId: string | null = null;
     for (const person of people.slice(0, 2)) {
@@ -179,7 +188,7 @@ export async function importCashBuyers(ws: string, o: { query: string; take: num
     if (existing) continue;
     const prices = ps.map((p) => p.lastSalePrice || 0).filter(Boolean);
     const b = await db.contact.create({ data: { workspaceId: ws, kind: "buyer", firstName: person?.first || ow.first, lastName: person?.last || ow.last, company: ow.company || null, phone, email, state: ps[0].state.toUpperCase().slice(0, 2), city: ps[0].city, buyerStatus: "NEW", tags: ["cash-buyer-list"], notes: `Found from ${ps.length} recent cash purchase(s): ${ps.map((p) => `${p.address}, ${p.city}${p.lastSalePrice ? ` ($${p.lastSalePrice.toLocaleString()})` : ""}`).join("; ")}` } });
-    await db.buyBox.create({ data: { contactId: b.id, name: "From recent purchases", states: [...new Set(ps.map((p) => p.state.toUpperCase().slice(0, 2)))], markets: [...new Set(ps.map((p) => p.city))], zips: [...new Set(ps.map((p) => p.zip))], propertyTypes: [...new Set(ps.map((p) => p.propertyType || "sfr"))], maxPrice: prices.length ? Math.round((Math.max(...prices) * 1.15) / 1000) * 1000 : null, notes: "Starting point inferred from their purchases: confirm on the first call." } });
+    await db.buyBox.create({ data: { contactId: b.id, name: "From recent purchases", states: [...new Set(ps.map((p) => p.state.toUpperCase().slice(0, 2)))], markets: [...new Set(ps.map((p) => p.city))], zips: [...new Set(ps.map((p) => p.zip))], propertyTypes: [...new Set(ps.map((p) => normalizeType(p.propertyType)))], maxPrice: prices.length ? Math.round((Math.max(...prices) * 1.15) / 1000) * 1000 : null, notes: "Starting point inferred from their purchases: confirm on the first call." } });
     made++;
   }
   await audit(ws, o.actor, "cash_buyers_imported", undefined, { meta: { query: o.query, found: found.length, made } });

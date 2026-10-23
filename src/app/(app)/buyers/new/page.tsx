@@ -1,4 +1,6 @@
 import { ActionForm, Submit } from "@/components/client";
+import { Combo } from "@/components/combo";
+import { US_STATES } from "@/lib/catalog";
 import { Card, Field, PageHeader } from "@/components/ui";
 import { pageCtx } from "@/lib/session";
 import { createBuyerAction } from "../../../actions/records";
@@ -31,7 +33,7 @@ export default async function NewBuyer() {
                 <input name="city" className="field" />
               </Field>
               <Field label="State">
-                <input name="state" maxLength={2} className="field uppercase" />
+                <Combo name="state" options={US_STATES} placeholder="State" />
               </Field>
             </div>
           </div>

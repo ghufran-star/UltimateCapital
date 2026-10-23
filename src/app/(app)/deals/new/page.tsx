@@ -1,8 +1,8 @@
 import { ActionForm, Submit } from "@/components/client";
+import { Combo } from "@/components/combo";
 import { Card, Field, PageHeader } from "@/components/ui";
-import { CONDITION_TIERS, DEAL_TYPES, EXITS, PROPERTY_TYPES } from "@/lib/rules";
+import { CONDITION_TIERS, DEAL_TYPES, EXIT_STRATEGIES, LEAD_SOURCES, OCCUPANCY, OWNER_TYPES, PROPERTY_TYPES, SITUATIONS, US_STATES } from "@/lib/catalog";
 import { pageCtx } from "@/lib/session";
-import { STATES } from "@/lib/states";
 import { createPropertyAction } from "../../../actions/records";
 
 export default async function NewDeal() {
@@ -23,13 +23,7 @@ export default async function NewDeal() {
             </Field>
             <div className="grid grid-cols-2 gap-3">
               <Field label="State">
-                <select name="state" className="field" required defaultValue="TX">
-                  {STATES.map((s) => (
-                    <option key={s.code} value={s.code}>
-                      {s.code}
-                    </option>
-                  ))}
-                </select>
+                <Combo name="state" options={US_STATES} defaultValue="TX" placeholder="Search states" />
               </Field>
               <Field label="ZIP">
                 <input name="zip" className="field" required inputMode="numeric" />
@@ -39,13 +33,7 @@ export default async function NewDeal() {
               <input name="county" className="field" />
             </Field>
             <Field label="Property type">
-              <select name="propertyType" className="field">
-                {PROPERTY_TYPES.map((t) => (
-                  <option key={t.key} value={t.key}>
-                    {t.label}
-                  </option>
-                ))}
-              </select>
+              <Combo name="propertyType" options={PROPERTY_TYPES} defaultValue="sfr" placeholder="Search types" />
             </Field>
             <div className="grid grid-cols-3 gap-3 md:col-span-2">
               <Field label="Beds">
@@ -54,34 +42,30 @@ export default async function NewDeal() {
               <Field label="Baths">
                 <input name="baths" className="field" inputMode="decimal" />
               </Field>
-              <Field label="Sq ft">
+              <Field label="Living area (sq ft)">
                 <input name="sqft" className="field" inputMode="numeric" />
               </Field>
             </div>
             <Field label="Year built">
               <input name="yearBuilt" className="field" inputMode="numeric" />
             </Field>
+            <Field label="Lot size (acres)">
+              <input name="lotAcres" className="field" inputMode="decimal" />
+            </Field>
             <Field label="Occupancy">
-              <select name="occupancy" className="field">
-                <option value="">Unknown</option>
-                <option value="vacant">Vacant</option>
-                <option value="owner">Owner-occupied</option>
-                <option value="tenant">Tenant</option>
-              </select>
+              <Combo name="occupancy" options={OCCUPANCY} emptyLabel="Unknown" placeholder="Unknown" />
             </Field>
-            <Field label="Overall condition" hint="Refine item by item later on the deal.">
-              <select name="conditionTier" className="field">
-                <option value="">Unknown</option>
-                {CONDITION_TIERS.map((t) => (
-                  <option key={t.key} value={t.key}>
-                    {t.label}
-                  </option>
-                ))}
-              </select>
+            <Field label="Rehab needed" hint="Refine item by item later on the deal.">
+              <Combo name="conditionTier" options={CONDITION_TIERS} emptyLabel="Unknown" placeholder="Unknown" />
             </Field>
+            <div className="md:col-span-2">
+              <Field label="Seller situation" hint="Pick all that apply: pre-foreclosure, probate, tired landlord…">
+                <Combo name="situations" options={SITUATIONS} multiple placeholder="Search situations" />
+              </Field>
+            </div>
           </div>
         </Card>
-        <Card title="Seller">
+        <Card title="Owner and equity">
           <div className="grid gap-3 md:grid-cols-2">
             <Field label="First name">
               <input name="firstName" className="field" />
@@ -95,30 +79,37 @@ export default async function NewDeal() {
             <Field label="Email">
               <input name="email" className="field" type="email" />
             </Field>
+            <Field label="Owner type">
+              <Combo name="ownerType" options={OWNER_TYPES} emptyLabel="Unknown" placeholder="Unknown" />
+            </Field>
+            <Field label="Absentee owner?">
+              <select name="absentee" className="field">
+                <option value="">Unknown</option>
+                <option value="yes">Yes: lives elsewhere</option>
+                <option value="no">No: lives at the property</option>
+              </select>
+            </Field>
+            <Field label="Estimated value (as-is)">
+              <input name="estValue" className="field tnum" inputMode="numeric" />
+            </Field>
+            <Field label="Mortgage balance (estimate)">
+              <input name="loanBalance" className="field tnum" inputMode="numeric" />
+            </Field>
             <Field label="Asking price">
-              <input name="askingPrice" className="field" inputMode="numeric" />
+              <input name="askingPrice" className="field tnum" inputMode="numeric" />
             </Field>
           </div>
         </Card>
         <Card title="Deal">
           <div className="grid gap-3 md:grid-cols-2">
             <Field label="Deal type">
-              <select name="dealType" className="field">
-                {DEAL_TYPES.map((t) => (
-                  <option key={t.key} value={t.key}>
-                    {t.label}
-                  </option>
-                ))}
-              </select>
+              <Combo name="dealType" options={DEAL_TYPES} defaultValue="assignment" />
             </Field>
             <Field label="Investor exit">
-              <select name="exitStrategy" className="field">
-                {EXITS.map((t) => (
-                  <option key={t.key} value={t.key}>
-                    {t.label}
-                  </option>
-                ))}
-              </select>
+              <Combo name="exitStrategy" options={EXIT_STRATEGIES} defaultValue="flip" />
+            </Field>
+            <Field label="Lead source">
+              <Combo name="leadSource" options={LEAD_SOURCES} emptyLabel="Unknown" placeholder="Where did this lead come from?" />
             </Field>
           </div>
         </Card>

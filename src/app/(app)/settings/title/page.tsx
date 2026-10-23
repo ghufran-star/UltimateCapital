@@ -1,4 +1,6 @@
 import { ActionForm, Submit } from "@/components/client";
+import { Combo } from "@/components/combo";
+import { US_STATES } from "@/lib/catalog";
 import { Card, Field, PageHeader } from "@/components/ui";
 import type { TitleCompany } from "@prisma/client";
 import { db } from "@/lib/db";
@@ -14,7 +16,7 @@ function TitleForm({ t, ro }: { t?: TitleCompany; ro: boolean }) {
           <input name="name" defaultValue={t?.name} className="field" />
         </Field>
         <Field label="State">
-          <input name="state" defaultValue={t?.state ?? ""} maxLength={2} className="field" />
+          <Combo name="state" options={US_STATES} defaultValue={t?.state} emptyLabel="Any state" placeholder="Search states" />
         </Field>
         <Field label="Email (packages go here)">
           <input name="email" defaultValue={t?.email ?? ""} className="field" />

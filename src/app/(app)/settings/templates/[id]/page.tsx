@@ -1,4 +1,6 @@
 import { notFound } from "next/navigation";
+import { Combo } from "@/components/combo";
+import { DEAL_TYPES, US_STATES } from "@/lib/catalog";
 import { ActionButton, ActionForm, Submit } from "@/components/client";
 import { Card, Field, PageHeader } from "@/components/ui";
 import { STANDARD_FIELDS } from "@/lib/contracts";
@@ -55,10 +57,10 @@ export default async function TemplatePage({ params }: { params: Promise<{ id: s
                 </select>
               </Field>
               <Field label="State (blank = all)">
-                <input name="state" defaultValue={t?.state ?? ""} maxLength={2} className="field uppercase" />
+                <Combo name="state" options={US_STATES} defaultValue={t?.state} emptyLabel="All states" placeholder="All states" />
               </Field>
               <Field label="Deal type (blank = all)">
-                <input name="dealType" defaultValue={t?.dealType ?? ""} className="field" />
+                <Combo name="dealType" options={DEAL_TYPES} defaultValue={t?.dealType} emptyLabel="All deal types" placeholder="All deal types" />
               </Field>
             </div>
             <Field label="Contract text">

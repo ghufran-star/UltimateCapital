@@ -1,5 +1,7 @@
 "use client";
 
+import { Combo } from "@/components/combo";
+import { PROPERTY_GROUP_KEYS, US_STATES } from "@/lib/catalog";
 import { useMemo, useState } from "react";
 import { ActionForm, Submit, type ActionState } from "@/components/client";
 import {
@@ -250,7 +252,7 @@ export function RulesEditor({ initial, version, action, readOnly, states }: { in
                 </div>
                 <div className="grid gap-3 md:grid-cols-2">
                   <Cond label="States">
-                    <ListField value={o.when.states} placeholder="TX, FL" onChange={(v) => setOverride(i, { ...o, when: { ...o.when, states: v?.map((s) => s.toUpperCase()) } })} />
+                    <Combo options={US_STATES} value={o.when.states || []} multiple placeholder="Any state" onChange={(v) => setOverride(i, { ...o, when: { ...o.when, states: v.length ? v : undefined } })} />
                   </Cond>
                   <Cond label="Markets (cities)">
                     <ListField value={o.when.markets} placeholder="Houston" onChange={(v) => setOverride(i, { ...o, when: { ...o.when, markets: v } })} />
@@ -265,16 +267,16 @@ export function RulesEditor({ initial, version, action, readOnly, states }: { in
                     </div>
                   </Cond>
                   <Cond label="Property types">
-                    <Chips options={PROPERTY_TYPES} value={o.when.propertyTypes} onChange={(v) => setOverride(i, { ...o, when: { ...o.when, propertyTypes: v } })} />
+                    <Combo options={[...PROPERTY_TYPES, ...Object.keys(PROPERTY_GROUP_KEYS).map((g) => ({ key: g, label: `Any ${g.toLowerCase()}`, group: "Whole groups" }))]} value={o.when.propertyTypes || []} multiple placeholder="Any type" onChange={(v) => setOverride(i, { ...o, when: { ...o.when, propertyTypes: v.length ? v : undefined } })} />
                   </Cond>
                   <Cond label="Deal types">
-                    <Chips options={DEAL_TYPES} value={o.when.dealTypes} onChange={(v) => setOverride(i, { ...o, when: { ...o.when, dealTypes: v } })} />
+                    <Combo options={DEAL_TYPES} value={o.when.dealTypes || []} multiple placeholder="Any deal type" onChange={(v) => setOverride(i, { ...o, when: { ...o.when, dealTypes: v.length ? v : undefined } })} />
                   </Cond>
                   <Cond label="Condition">
                     <Chips options={CONDITION_TIERS} value={o.when.conditionTiers} onChange={(v) => setOverride(i, { ...o, when: { ...o.when, conditionTiers: v } })} />
                   </Cond>
                   <Cond label="Exit / occupancy">
-                    <Chips options={[...EXITS, { key: "vacant", label: "Vacant" }, { key: "tenant", label: "Tenant" }, { key: "owner", label: "Owner" }]} value={[...(o.when.exits || []), ...(o.when.occupancy || [])]} onChange={(v) => setOverride(i, { ...o, when: { ...o.when, exits: v?.filter((x) => ["flip", "rental"].includes(x)), occupancy: v?.filter((x) => !["flip", "rental"].includes(x)) } as Condition })} />
+                    <Chips options={[...EXITS, { key: "vacant", label: "Vacant" }, { key: "tenant", label: "Tenant" }, { key: "owner", label: "Owner" }]} value={[...(o.when.exits || []), ...(o.when.occupancy || [])]} onChange={(v) => setOverride(i, { ...o, when: { ...o.when, exits: v?.filter((x) => EXITS.some((e) => e.key === x)), occupancy: v?.filter((x) => !EXITS.some((e) => e.key === x)) } as Condition })} />
                   </Cond>
                 </div>
                 <div className="rounded-xl bg-soft p-3">

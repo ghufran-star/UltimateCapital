@@ -51,10 +51,17 @@ async function fromNumber(ws: string, state?: string | null) {
   return (state && nums.find((n) => n.state === state)) || nums[0] || null;
 }
 
+/** The demo workspace never contacts anyone, whatever keys are configured. */
+async function demoGuard(ws: string) {
+  const w = await db.workspace.findUnique({ where: { id: ws }, select: { isDemo: true } });
+  return !!w?.isDemo;
+}
+
 export async function placeCall(
   ws: string,
   o: { contactId: string; agentRole: string; opportunityId?: string; campaignId?: string; memberId?: string }
 ) {
+  if (await demoGuard(ws)) return "Blocked: demo workspace never places calls";
   const elig = await checkEligibility(ws, o.contactId, "ai_call");
   if (!elig.ok) {
     if (elig.retryAt) {
@@ -187,6 +194,7 @@ export async function verifyTwilio(ws: string, url: string, params: Record<strin
 }
 
 export async function sendSms(ws: string, o: { contactId: string; body: string; opportunityId?: string; skipChecks?: boolean }) {
+  if (await demoGuard(ws)) return "Blocked: demo workspace never sends texts";
   if (!o.body.trim()) return "Empty message";
   const elig = o.skipChecks ? { ok: true as const } : await checkEligibility(ws, o.contactId, "sms");
   if (!elig.ok) {
@@ -202,14 +210,17 @@ export async function sendSms(ws: string, o: { contactId: string; body: string; 
   if (!from) throw new Error("No phone number set up. Add one in Settings → Phone numbers.");
   const to = e164(contact.phone)!;
   const base = await setting(ws, "PUBLIC_URL");
+  // First text to a person carries the opt-out instruction (carrier and TCPA expectation).
+  const textedBefore = await db.interaction.count({ where: { workspaceId: ws, contactId: o.contactId, channel: "sms", direction: "outbound" } });
+  const body = !textedBefore && !/\bstop\b/i.test(o.body) ? `${o.body.trim()} Reply STOP to opt out.` : o.body;
   const r = await twilio(ws, "/Messages.json", {
     To: to,
     From: from.number,
-    Body: o.body,
+    Body: body,
     ...(base ? { StatusCallback: `${base.replace(/\/$/, "")}/api/webhooks/twilio/status?ws=${ws}` } : {}),
   });
   await db.interaction.create({
-    data: { workspaceId: ws, contactId: o.contactId, opportunityId: o.opportunityId, channel: "sms", direction: "outbound", provider: "twilio", providerRef: String(r.sid), fromAddr: from.number, toAddr: to, body: o.body },
+    data: { workspaceId: ws, contactId: o.contactId, opportunityId: o.opportunityId, channel: "sms", direction: "outbound", provider: "twilio", providerRef: String(r.sid), fromAddr: from.number, toAddr: to, body },
   });
   await db.contact.update({ where: { id: o.contactId }, data: { lastContactAt: new Date() } });
   return `Texted ${fullName(contact)}`;
@@ -235,6 +246,7 @@ export async function onInboundSms(ws: string, p: { From: string; To: string; Bo
 
 /** Human call: Twilio rings the team member's phone first, then connects the contact. Recorded. */
 export async function bridgeCall(ws: string, userPhone: string, contactId: string, actor: string) {
+  if (await demoGuard(ws)) throw new Error("The demo workspace never places calls.");
   const elig = await checkEligibility(ws, contactId, "human_call");
   if (!elig.ok) throw new Error(elig.reason);
   const contact = await db.contact.findUniqueOrThrow({ where: { id: contactId } });
@@ -278,6 +290,7 @@ export async function sendEmail(
   ws: string,
   o: { to: string; subject: string; text: string; contactId?: string; opportunityId?: string; replyTo?: string; attachments?: { filename: string; content: Buffer }[]; skipChecks?: boolean }
 ) {
+  if (await demoGuard(ws)) return "Blocked: demo workspace never sends email";
   if (o.contactId && !o.skipChecks) {
     const elig = await checkEligibility(ws, o.contactId, "email");
     if (!elig.ok) return `Blocked: ${elig.reason}`;

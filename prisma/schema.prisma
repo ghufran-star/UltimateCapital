@@ -42,6 +42,7 @@ model Workspace {
   numbers       PhoneNumber[]
   invites       Invite[]
   notifications Notification[]
+  phoneChecks   PhoneCheck[]
 }
 
 model User {
@@ -280,6 +281,24 @@ model Suppression {
 
   @@unique([workspaceId, kind, value, source])
   @@index([workspaceId, value])
+}
+
+/// Result of a live DNC / litigator check for one number, kept as evidence and as a short cache.
+model PhoneCheck {
+  id          String   @id @default(cuid())
+  workspaceId String
+  phone       String // E.164
+  provider    String // dncscrub | tcpalitigator | blacklist_alliance | custom
+  blocked     Boolean
+  code        String? // provider result code
+  reason      String?
+  lineType    String? // wireless | landline | voip
+  raw         Json?
+  checkedAt   DateTime @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, phone, checkedAt])
 }
 
 model StatePack {

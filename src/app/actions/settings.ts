@@ -326,3 +326,15 @@ export async function workspaceSettingsAction(_: ActionState, fd: FormData): Pro
     return { ok: true, message: "Saved" };
   });
 }
+
+export async function checkNumberAction(_: ActionState, fd: FormData): Promise<ActionState> {
+  return act(async () => {
+    const c = await requireCtx("settings");
+    const phone = e164(str(fd.get("phone")));
+    if (!phone) throw new Error("Enter a US number.");
+    const { liveCheck } = await import("@/lib/dnc");
+    const r = await liveCheck(c.workspace.id, phone, { hasConsent: fd.get("consent") === "on", force: true });
+    const detail = r.results.map((x) => `${x.provider}: ${x.litigator ? "litigator" : x.listed ? "DNC-listed" : x.invalid ? "invalid" : "clean"}${x.code ? ` (${x.code})` : ""}${x.lineType ? `, ${x.lineType}` : ""}`).join(" · ");
+    return r.ok ? { ok: true, message: `✓ OK to contact. ${detail || "No provider answered."}` } : { error: `✗ Blocked: ${r.reason}${detail ? ` · ${detail}` : ""}` };
+  });
+}

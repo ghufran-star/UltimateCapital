@@ -20,11 +20,12 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
     include: { buyBoxes: { orderBy: { createdAt: "asc" } }, ownerships: { include: { property: { include: { opportunities: true } } } }, consents: { orderBy: { createdAt: "desc" } }, interests: { include: { opportunity: { include: { property: true } } }, orderBy: { updatedAt: "desc" } } },
   });
   if (!ct) notFound();
-  const [interactions, facts, tasks, members] = await Promise.all([
+  const [interactions, facts, tasks, members, checks] = await Promise.all([
     db.interaction.findMany({ where: { workspaceId: ws, contactId: id }, orderBy: { createdAt: "desc" }, take: 50 }),
     db.fact.findMany({ where: { workspaceId: ws, entityType: "contact", entityId: id }, orderBy: { createdAt: "desc" }, take: 60 }),
     db.task.findMany({ where: { workspaceId: ws, contactId: id, status: "open" }, orderBy: { dueAt: "asc" } }),
     db.membership.findMany({ where: { workspaceId: ws }, include: { user: true } }),
+    ct.phone ? db.phoneCheck.findMany({ where: { workspaceId: ws, phone: ct.phone }, orderBy: { checkedAt: "desc" }, take: 3 }) : Promise.resolve([]),
   ]);
   const [eCall, eSms] = await Promise.all([checkEligibility(ws, id, "ai_call").catch(() => ({ ok: false, reason: "unknown" })), checkEligibility(ws, id, "sms").catch(() => ({ ok: false, reason: "unknown" }))]);
   const writable = !c.workspace.isDemo && can(c.role, ct.kind === "buyer" ? "buyers" : "sellers");
@@ -403,6 +404,18 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
           </Card>
 
           <Card title="Consent & DNC">
+            <div className="mb-3 space-y-1 text-sm">
+              {checks.length ? (
+                checks.map((k) => (
+                  <div key={k.id}>
+                    {k.blocked ? "⛔" : "✓"} {k.provider}: {k.blocked ? k.reason || "blocked" : "clean"}
+                    {k.lineType ? ` · ${k.lineType}` : ""} <span className="text-xs text-muted">· {ago(k.checkedAt)}</span>
+                  </div>
+                ))
+              ) : (
+                <div className="text-muted">Not checked against DNC lists yet (happens automatically before the first call or text).</div>
+              )}
+            </div>
             <ul className="mb-3 space-y-1 text-sm">
               {ct.consents.length ? (
                 ct.consents.map((x) => (

@@ -30,12 +30,13 @@ export const DEFAULT_CAMPAIGN: CampaignSettings = {
 export const roleFor = (kind: string) => (kind === "buyer" ? "buyer_acquisition" : kind === "disposition" ? "disposition" : "seller_acquisition");
 
 export async function dialerTick() {
-  const running = await db.campaign.findMany({ where: { status: "running" } });
+  const running = await db.campaign.findMany({ where: { status: "running", workspace: { isDemo: false } } });
   let queued = 0;
   for (const c of running) {
     const s = { ...DEFAULT_CAMPAIGN, ...((c.settings as Partial<CampaignSettings>) || {}) };
     const since = new Date(Date.now() - 24 * 3600_000);
-    const today = await db.campaignMember.count({ where: { campaignId: c.id, attempts: { gt: 0 }, createdAt: { lte: new Date() }, nextAttemptAt: { gte: since } } });
+    // Contacts attempted in the last 24 hours (each attempt is one task with this campaign's key).
+    const today = await db.task.count({ where: { workspaceId: c.workspaceId, dedupeKey: { startsWith: `campaign:${c.id}:` }, createdAt: { gte: since } } });
     const active = await db.campaignMember.count({ where: { campaignId: c.id, status: "in_progress" } });
     const room = Math.max(0, Math.min(s.concurrency - active, s.dailyCap - today));
     if (!room) continue;

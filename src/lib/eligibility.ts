@@ -1,5 +1,4 @@
 import { audit, json } from "./audit";
-import { setting } from "./config";
 import { db } from "./db";
 import { cancelTasks } from "./engine";
 import { draftPack, StatePackData, stateTz } from "./states";
@@ -19,28 +18,6 @@ export async function activePack(ws: string, state?: string | null) {
 async function suppressed(ws: string, kind: "phone" | "email", value: string) {
   const s = await db.suppression.findFirst({ where: { workspaceId: ws, kind, value } });
   return s ? `${kind === "phone" ? "Number" : "Email"} is on the ${s.source.replace("_", " ")} list${s.reason ? ` (${s.reason})` : ""}` : null;
-}
-
-async function providerScrub(ws: string, phone: string): Promise<string | null> {
-  const url = await setting(ws, "DNC_SCRUB_URL");
-  if (!url) return null;
-  const key = await setting(ws, "DNC_SCRUB_KEY");
-  try {
-    const u = new URL(url);
-    u.searchParams.set("phone", phone);
-    const res = await fetch(u, { headers: key ? { authorization: `Bearer ${key}` } : {}, signal: AbortSignal.timeout(8000) });
-    if (!res.ok) return "DNC scrub provider unavailable: blocked to be safe";
-    const j = (await res.json()) as { blocked?: boolean; reason?: string };
-    if (j.blocked) {
-      await db.suppression
-        .create({ data: { workspaceId: ws, kind: "phone", value: phone, source: "provider", reason: j.reason || "Provider scrub" } })
-        .catch(() => null);
-      return `Blocked by DNC scrub: ${j.reason || "listed"}`;
-    }
-    return null;
-  } catch {
-    return "DNC scrub provider unreachable: blocked to be safe";
-  }
 }
 
 /** The state that governs outreach to this contact: their property's state for sellers, else their own. */
@@ -86,8 +63,13 @@ export async function checkEligibility(ws: string, contactId: string, channel: C
         return { ok: false, reason: "Daily call limit for this contact reached", retryAt: new Date(now.getTime() + 20 * 3600_000), pack };
       }
     }
-    const scrub = await providerScrub(ws, phone);
-    if (scrub) return { ok: false, reason: scrub };
+    // Live federal/state DNC + litigator check, immediately before contact. Recorded consent for
+    // this channel is the DNC exception (never for litigators, opt-outs or invalid numbers).
+    const consentChannels = channel === "sms" ? ["sms"] : ["ai_voice", "call"];
+    const hasConsent = consentChannels.some((ch) => consent(ch)?.granted);
+    const { liveCheck } = await import("./dnc");
+    const live = await liveCheck(ws, phone, { hasConsent });
+    if (!live.ok) return { ok: false, reason: live.reason };
   }
   if (channel === "email") {
     if (!c.email) return { ok: false, reason: "No email address" };

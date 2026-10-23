@@ -90,6 +90,7 @@ export const AUTO_TASKS = new Set([
   "demand_campaign",
   "contract_deadline",
   "send_contract",
+  "dnc_scrub",
 ]);
 
 // ---------- Event handlers ----------
@@ -171,7 +172,7 @@ export async function handleEvent(e: { id: string; workspaceId: string; type: st
 }
 
 export async function runEvents(limit = 25) {
-  const events = await db.event.findMany({ where: { handledAt: null }, orderBy: { createdAt: "asc" }, take: limit });
+  const events = await db.event.findMany({ where: { handledAt: null, workspace: { isDemo: false } }, orderBy: { createdAt: "asc" }, take: limit });
   for (const e of events) {
     try {
       await handleEvent(e);
@@ -206,8 +207,14 @@ export async function executeTask(t: { id: string; workspaceId: string; kind: st
       return (await import("./matching")).outreachToBuyer(ws, t.entityId!, t.contactId!, String(p.mode || "anonymous"));
     case "call":
       return (await import("./comms")).placeCall(ws, { contactId: t.contactId!, agentRole: String(p.agentRole || "seller_acquisition"), opportunityId: (p.opportunityId as string) || undefined, campaignId: (p.campaignId as string) || undefined, memberId: (p.memberId as string) || undefined });
-    case "sms":
-      return (await import("./comms")).sendSms(ws, { contactId: t.contactId!, body: String(p.body || ""), opportunityId: (p.opportunityId as string) || undefined });
+    case "sms": {
+      const r = await (await import("./comms")).sendSms(ws, { contactId: t.contactId!, body: String(p.body || ""), opportunityId: (p.opportunityId as string) || undefined });
+      if (p.memberId) {
+        const blocked = r.startsWith("Blocked");
+        await db.campaignMember.update({ where: { id: String(p.memberId) }, data: blocked ? { status: "blocked", blockedReason: r.slice(9, 200) } : { lastOutcome: r.startsWith("Rescheduled") ? "rescheduled" : "texted" } }).catch(() => null);
+      }
+      return r;
+    }
     case "email":
       return (await import("./comms")).sendEmail(ws, { to: String(p.to || ""), contactId: t.contactId || undefined, subject: String(p.subject || ""), text: String(p.text || ""), opportunityId: (p.opportunityId as string) || undefined });
     case "chase_title":
@@ -216,6 +223,8 @@ export async function executeTask(t: { id: string; workspaceId: string; kind: st
       return (await import("./contracts")).deadlineReminder(ws, t.entityId!, String(p.which || ""));
     case "send_contract":
       return (await import("./contracts")).sendForSignature(ws, t.entityId!, "system");
+    case "dnc_scrub":
+      return (await import("./dnc")).scrubContacts(ws, ((p.contactIds as string[]) || []).slice(0, 500));
   }
   return "nothing to do";
 }
@@ -223,7 +232,7 @@ export async function executeTask(t: { id: string; workspaceId: string; kind: st
 export async function runTasks(limit = 10) {
   await db.task.updateMany({ where: { status: "running", updatedAt: { lt: new Date(Date.now() - 10 * 60_000) } }, data: { status: "open" } });
   const due = await db.task.findMany({
-    where: { status: "open", dueAt: { lte: new Date() }, kind: { in: [...AUTO_TASKS] } },
+    where: { status: "open", dueAt: { lte: new Date() }, kind: { in: [...AUTO_TASKS] }, workspace: { isDemo: false } },
     orderBy: [{ priority: "asc" }, { dueAt: "asc" }],
     take: limit,
   });

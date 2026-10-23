@@ -235,6 +235,11 @@ export async function campaignStatusAction(_: ActionState, fd: FormData): Promis
       }
     }
     await db.campaign.update({ where: { id }, data: { status } });
+    if (status === "running") {
+      const members = await db.campaignMember.findMany({ where: { campaignId: id, status: { in: ["pending", "retry"] } }, select: { contactId: true } });
+      const { queueScrub } = await import("@/lib/dnc");
+      await queueScrub(c.workspace.id, members.map((m) => m.contactId));
+    }
     await audit(c.workspace.id, c.user.id, `campaign_${status}`, { type: "campaign", id });
     return { ok: true, message: status === "running" ? "Running. The dialer checks every minute." : "Updated" };
   });

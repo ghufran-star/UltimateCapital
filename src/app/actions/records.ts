@@ -5,6 +5,7 @@ import { audit, json } from "@/lib/audit";
 import { bridgeCall, placeCall, sendEmail, sendSms } from "@/lib/comms";
 import { db } from "@/lib/db";
 import { createOpportunity, setStage } from "@/lib/deals";
+import { queueScrub } from "@/lib/dnc";
 import { optOut } from "@/lib/eligibility";
 import { createTask, emit } from "@/lib/engine";
 import { runMatching, startDemandCampaign } from "@/lib/matching";
@@ -123,6 +124,7 @@ export async function importSellersAction(_: ActionState, fd: FormData): Promise
     const campaignId = str(fd.get("campaignId"));
     let made = 0;
     let skipped = 0;
+    const touched: string[] = [];
     for (const r of rows.slice(0, 5000)) {
       const address = pick(r, "address", "property_address", "street");
       const city = pick(r, "city", "property_city");
@@ -148,6 +150,7 @@ export async function importSellersAction(_: ActionState, fd: FormData): Promise
         const p2 = pick(r, "phone2", "phone_2");
         if (p2 && !s.phone2) await db.contact.update({ where: { id: s.id }, data: { phone2: e164(p2) } });
         sellerId = s.id;
+        touched.push(s.id);
         await db.ownership.upsert({ where: { contactId_propertyId: { contactId: s.id, propertyId: p.id } }, create: { contactId: s.id, propertyId: p.id }, update: {} });
       }
       const has = await db.opportunity.findFirst({ where: { workspaceId: ws, propertyId: p.id } });
@@ -155,6 +158,7 @@ export async function importSellersAction(_: ActionState, fd: FormData): Promise
       if (campaignId && sellerId) await db.campaignMember.upsert({ where: { campaignId_contactId_propertyId: { campaignId, contactId: sellerId, propertyId: p.id } }, create: { campaignId, contactId: sellerId, propertyId: p.id }, update: {} });
       made++;
     }
+    await queueScrub(ws, touched);
     await audit(ws, c.user.id, "sellers_imported", undefined, { meta: { rows: rows.length, made, skipped } });
     return { ok: true, message: `Imported ${made} properties${skipped ? `, skipped ${skipped} rows missing address/city/state/ZIP` : ""}.` };
   });
@@ -329,6 +333,7 @@ export async function importBuyersAction(_: ActionState, fd: FormData): Promise<
     const rows = parseCsv(await readUpload(fd));
     if (!rows.length) throw new Error("No rows found. The first line must be column headers.");
     let made = 0;
+    const touched: string[] = [];
     for (const r of rows.slice(0, 5000)) {
       const name = pick(r, "name", "full_name");
       const [f, ...l] = name.split(" ");
@@ -337,6 +342,7 @@ export async function importBuyersAction(_: ActionState, fd: FormData): Promise<
       const email = pick(r, "email");
       if (!first && !phone && !email && !pick(r, "company")) continue;
       const b = await upsertContact(ws, { kind: "buyer", firstName: first, lastName: pick(r, "last_name", "lastname") || l.join(" "), company: pick(r, "company", "entity"), phone, email, state: pick(r, "state").slice(0, 2), city: pick(r, "city") });
+      touched.push(b.id);
       const states = pick(r, "buy_states", "states") || pick(r, "state");
       const markets = pick(r, "markets", "buy_cities", "cities");
       const zips = pick(r, "zips", "buy_zips");
@@ -359,6 +365,7 @@ export async function importBuyersAction(_: ActionState, fd: FormData): Promise<
       }
       made++;
     }
+    await queueScrub(ws, touched);
     await audit(ws, c.user.id, "buyers_imported", undefined, { meta: { rows: rows.length, made } });
     return { ok: true, message: `Imported ${made} buyers.` };
   });

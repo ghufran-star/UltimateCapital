@@ -1,0 +1,739 @@
+// UltimateCapital — one shared database for the whole business.
+// Every business record belongs to a Workspace (a business / legal entity).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------- Accounts
+
+model Workspace {
+  id        String   @id @default(cuid())
+  name      String
+  isDemo    Boolean  @default(false)
+  timezone  String   @default("America/Chicago")
+  createdAt DateTime @default(now())
+
+  members       Membership[]
+  settings      Setting[]
+  contacts      Contact[]
+  properties    Property[]
+  campaigns     Campaign[]
+  opportunities Opportunity[]
+  interactions  Interaction[]
+  tasks         Task[]
+  events        Event[]
+  audits        AuditEvent[]
+  approvals     Approval[]
+  ruleSets      RuleSet[]
+  statePacks    StatePack[]
+  templates     ContractTemplate[]
+  contracts     Contract[]
+  titleCos      TitleCompany[]
+  transactions  Transaction[]
+  payments      Payment[]
+  suppressions  Suppression[]
+  agents        Agent[]
+  numbers       PhoneNumber[]
+  invites       Invite[]
+  notifications Notification[]
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String
+  phone        String? // for click-to-call bridging and warm transfers
+  passwordHash String
+  isPlatformOwner Boolean @default(false) // first account: can create workspaces and open the demo
+  createdAt    DateTime @default(now())
+
+  memberships Membership[]
+  sessions    Session[]
+}
+
+model Membership {
+  id          String   @id @default(cuid())
+  workspaceId String
+  userId      String
+  role        String // owner | admin | acquisitions | dispositions | tc | caller | viewer
+  states      String[] @default([]) // optional: limit to these states
+  createdAt   DateTime @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, userId])
+}
+
+model Session {
+  id          String   @id // sha256 of cookie token
+  userId      String
+  workspaceId String?
+  expiresAt   DateTime
+  createdAt   DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Invite {
+  id          String    @id @default(cuid())
+  workspaceId String
+  token       String    @unique
+  email       String?
+  role        String    @default("caller")
+  createdById String
+  usedAt      DateTime?
+  expiresAt   DateTime
+  createdAt   DateTime  @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+}
+
+model Setting {
+  workspaceId String
+  key         String
+  value       String // encrypted
+  updatedAt   DateTime @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@id([workspaceId, key])
+}
+
+model Notification {
+  id          String    @id @default(cuid())
+  workspaceId String
+  userId      String?
+  title       String
+  body        String
+  href        String?
+  readAt      DateTime?
+  createdAt   DateTime  @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, userId, readAt])
+}
+
+// ---------------------------------------------------------------- People & property
+
+model Contact {
+  id          String   @id @default(cuid())
+  workspaceId String
+  kind        String   @default("seller") // seller | buyer | other (title, attorney, agent)
+  firstName   String   @default("")
+  lastName    String   @default("")
+  company     String?
+  phone       String?
+  phone2      String?
+  email       String?
+  state       String? // home state (2 letters)
+  city        String?
+  timezone    String?
+  assigneeId  String? // user id or "agent:<role>"
+  tags        String[] @default([])
+  notes       String?
+  doNotContact Boolean @default(false)
+
+  // Buyer relationship
+  buyerStatus        String? // NEW ELIGIBLE CONTACTED ENGAGED QUALIFYING QUALIFIED ACTIVE + DORMANT UNAVAILABLE DNC
+  fundsVerified      Boolean  @default(false)
+  fundingMethod      String? // cash | hard_money | private | conventional
+  capacityNote       String?
+  closingSpeedDays   Int?
+  buyingPerMonth     Float? // stated buying frequency
+  nextBuyingAt       DateTime? // stated timeline: don't send deals before this
+  maxDealsPerWeek    Int?
+  maxDealsPerMonth   Int?
+  preferredChannel   String? // call | sms | email
+  ignoredInRow       Int      @default(0)
+  dealsClosed        Int      @default(0)
+  reliability        Int      @default(50) // 0..100
+
+  // Seller relationship
+  sellerStatus String?
+
+  summary     String? // current situation, kept fresh by conversation intelligence
+  openQuestions String[] @default([])
+  lastContactAt DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspace    Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  buyBoxes     BuyBox[]
+  ownerships   Ownership[]
+  consents     Consent[]
+  interactions Interaction[]
+  interests    BuyerInterest[]
+  memberships  CampaignMember[]
+
+  @@index([workspaceId, kind])
+  @@index([workspaceId, phone])
+  @@index([workspaceId, email])
+}
+
+model BuyBox {
+  id            String   @id @default(cuid())
+  contactId     String
+  name          String   @default("Buy box")
+  active        Boolean  @default(true)
+  states        String[] @default([])
+  markets       String[] @default([]) // cities
+  zips          String[] @default([])
+  excludedZips  String[] @default([])
+  propertyTypes String[] @default([]) // sfr condo_th 2_4 5_plus mobile land commercial
+  strategy      String? // flip | rental | brrrr | redevelopment | any
+  minPrice      Int?
+  maxPrice      Int?
+  minBeds       Int?
+  minBaths      Float?
+  minSqft       Int?
+  maxYearBuiltAge Int?
+  maxCondition  String? // cosmetic | moderate | heavy | gut (worst they accept)
+  occupancyOk   String[] @default([]) // vacant tenant owner
+  minNetProfit  Int?
+  minProfitPct  Float? // e.g. 0.15
+  profitBasis   String   @default("net") // net | gross | both
+  minCapRate    Float? // rentals
+  notes         String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+}
+
+model Property {
+  id           String   @id @default(cuid())
+  workspaceId  String
+  address      String
+  city         String
+  state        String // 2 letters
+  zip          String
+  county       String?
+  parcel       String?
+  legalDesc    String?
+  propertyType String   @default("sfr")
+  beds         Float?
+  baths        Float?
+  sqft         Int?
+  lotSqft      Int?
+  yearBuilt    Int?
+  occupancy    String? // vacant | tenant | owner
+  conditionTier String? // cosmetic | moderate | heavy | gut
+  condition    Json? // { roof: {age, notes}, foundation: ..., hvac..., answers }
+  rentEstimate Int?
+  taxes        Int?
+  titleFlags   String[] @default([]) // probate liens back_taxes
+  photos       String[] @default([])
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  workspace     Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  ownerships    Ownership[]
+  opportunities Opportunity[]
+
+  @@index([workspaceId, state, zip])
+}
+
+model Ownership {
+  id         String  @id @default(cuid())
+  contactId  String
+  propertyId String
+  role       String  @default("owner") // owner | co_owner | heir | executor | poa
+  verified   Boolean @default(false)
+
+  contact  Contact  @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  property Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  @@unique([contactId, propertyId])
+}
+
+// ---------------------------------------------------------------- Compliance
+
+model Consent {
+  id        String   @id @default(cuid())
+  contactId String
+  channel   String // call | sms | email | ai_voice
+  granted   Boolean  @default(true)
+  evidence  String // where/how consent was captured
+  createdAt DateTime @default(now())
+
+  contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+}
+
+model Suppression {
+  id          String   @id @default(cuid())
+  workspaceId String
+  kind        String // phone | email
+  value       String // E.164 phone or lowercased email
+  source      String // internal | national_dnc | state_dnc:TX | litigator | reassigned | opt_out
+  reason      String?
+  createdAt   DateTime @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, kind, value, source])
+  @@index([workspaceId, value])
+}
+
+model StatePack {
+  id          String    @id @default(cuid())
+  workspaceId String
+  state       String // 2 letters
+  status      String    @default("draft") // draft | unverified | active | disabled
+  version     Int       @default(1)
+  data        Json // see lib/states.ts StatePackData
+  approvedBy  String?
+  approvedAt  DateTime?
+  updatedAt   DateTime  @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, state])
+}
+
+// ---------------------------------------------------------------- Campaigns & conversations
+
+model Campaign {
+  id          String   @id @default(cuid())
+  workspaceId String
+  kind        String // seller | buyer | disposition
+  name        String
+  status      String   @default("draft") // draft | running | paused | done
+  state       String?
+  market      String?
+  agentId     String?
+  channels    String[] @default(["call"]) // call sms email
+  settings    Json // windows, retries, filters, objective, budget
+  opportunityId String? // disposition campaigns
+  version     Int      @default(1)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspace Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  members   CampaignMember[]
+}
+
+model CampaignMember {
+  id            String    @id @default(cuid())
+  campaignId    String
+  contactId     String
+  propertyId    String?
+  status        String    @default("pending") // pending | in_progress | retry | done | blocked | stopped
+  attempts      Int       @default(0)
+  nextAttemptAt DateTime?
+  lastOutcome   String?
+  blockedReason String?
+  createdAt     DateTime  @default(now())
+
+  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  contact  Contact  @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@unique([campaignId, contactId, propertyId])
+  @@index([campaignId, status, nextAttemptAt])
+}
+
+model Interaction {
+  id            String   @id @default(cuid())
+  workspaceId   String
+  contactId     String?
+  opportunityId String?
+  campaignId    String?
+  channel       String // call | sms | email | note | system
+  direction     String   @default("outbound") // inbound | outbound | internal
+  provider      String? // retell | twilio | email | manual
+  providerRef   String?  @unique
+  status        String   @default("done") // queued | in_progress | done | failed
+  fromAddr      String?
+  toAddr        String?
+  subject       String?
+  body          String? // message text or transcript
+  summary       String?
+  outcome       String? // interested | not_interested | callback | voicemail | no_answer | dnc | ...
+  recordingUrl  String?
+  durationSec   Int?
+  intel         Json? // structured output of conversation intelligence
+  processedAt   DateTime?
+  createdAt     DateTime @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  contact   Contact?  @relation(fields: [contactId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId, contactId, createdAt])
+  @@index([workspaceId, opportunityId])
+}
+
+// Versioned business memory: every fact with its source and kind. Never overwritten.
+model Fact {
+  id            String    @id @default(cuid())
+  workspaceId   String
+  entityType    String // contact | property | opportunity | buybox
+  entityId      String
+  field         String
+  value         Json
+  kind          String    @default("reported") // reported | verified | estimate | inferred
+  confidence    Float     @default(0.7)
+  interactionId String?
+  supersededAt  DateTime?
+  conflictsWith String? // id of fact it contradicts
+  createdAt     DateTime  @default(now())
+
+  @@index([entityType, entityId, field])
+}
+
+model Agent {
+  id          String   @id @default(cuid())
+  workspaceId String
+  role        String // seller_acquisition | property_discovery | negotiation | buyer_acquisition | disposition | receptionist | transaction
+  name        String
+  persona     String // layer 1
+  playbook    String // layer 4
+  tools       String[] @default([])
+  voiceId     String?
+  retellAgentId String?
+  retellLlmId String?
+  version     Int      @default(1)
+  active      Boolean  @default(true)
+  updatedAt   DateTime @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+}
+
+model PhoneNumber {
+  id          String  @id @default(cuid())
+  workspaceId String
+  number      String // E.164
+  market      String?
+  state       String?
+  inboundMode String  @default("agent") // agent | forward | voicemail
+  inboundAgentId String?
+  forwardUserId String?
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, number])
+}
+
+// ---------------------------------------------------------------- Deals
+
+model RuleSet {
+  id          String   @id @default(cuid())
+  workspaceId String
+  version     Int
+  active      Boolean  @default(false)
+  rules       Json // see lib/rules.ts RuleSetData
+  note        String?
+  createdBy   String?
+  createdAt   DateTime @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, version])
+}
+
+model Opportunity {
+  id             String    @id @default(cuid())
+  workspaceId    String
+  propertyId     String
+  sellerId       String?
+  campaignId     String?
+  stage          String    @default("NEW")
+  exception      String? // CALLBACK AWAITING_DOCS VALUATION_BLOCKED APPROVAL_REQUIRED DECLINED WITHDRAWN DISPUTE CONTRACT_FAILED DNC
+  dealType       String    @default("assignment")
+  exitStrategy   String    @default("flip")
+  askingPrice    Int?
+  sellerLowest   Int? // lowest price the seller has indicated
+  motivation     String?
+  timeline       String?
+  decisionMakers String?
+  assigneeId     String?
+  hotScore       Int       @default(0)
+  verificationSentAt DateTime?
+  approvedAt     DateTime?
+  emdRecommendedAt DateTime?
+  contractPrice  Int?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  workspace   Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  property    Property        @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  valuations  Valuation[]
+  offers      Offer[]
+  interests   BuyerInterest[]
+  contracts   Contract[]
+  transaction Transaction?
+
+  @@index([workspaceId, stage])
+}
+
+model Valuation {
+  id            String   @id @default(cuid())
+  opportunityId String
+  ruleSetId     String?
+  ruleVersion   Int?
+  asIs          Int?
+  arv           Int?
+  rent          Int?
+  repairsLow    Int?
+  repairsLikely Int?
+  repairsHigh   Int?
+  repairItems   Json? // [{item, tier, cost, reason}]
+  comps         Json? // [{address, price, date, sqft, source, adjusted}]
+  result        Json // full calculation output (lib/rules.ts Calculation)
+  confidence    Float    @default(0.5)
+  blocked       String? // reason a firm valuation isn't allowed
+  createdAt     DateTime @default(now())
+
+  opportunity Opportunity @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+}
+
+model Offer {
+  id            String   @id @default(cuid())
+  opportunityId String
+  side          String // seller | buyer
+  contactId     String?
+  round         Int      @default(1)
+  price         Int
+  terms         Json?
+  by            String // us | them
+  authority     String? // rule | approved | over_limit
+  valuationId   String?
+  status        String   @default("proposed") // proposed | countered | accepted | rejected | withdrawn
+  response      String?
+  createdAt     DateTime @default(now())
+
+  opportunity Opportunity @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+}
+
+model BuyerInterest {
+  id            String    @id @default(cuid())
+  opportunityId String
+  contactId     String
+  buyBoxId      String?
+  stage         String    @default("MATCHED") // MATCHED CONTACT_ELIGIBLE PRESENTED INTERESTED DUE_DILIGENCE OFFER_SUBMITTED TERMS_AGREED AGREEMENT_EXECUTED CLOSING COMPLETED + REJECTED NO_RESPONSE WITHDRAWN
+  fitScore      Int       @default(0)
+  reasons       Json?
+  serious       Boolean   @default(false)
+  priceMentioned Int?
+  respondedAt   DateTime?
+  presentedAt   DateTime?
+  notes         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  opportunity Opportunity @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  contact     Contact     @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@unique([opportunityId, contactId])
+}
+
+model Approval {
+  id          String    @id @default(cuid())
+  workspaceId String
+  kind        String // offer_over_limit | price_below_floor | final_offer | emd | payment | state_pack | contract
+  entityType  String
+  entityId    String
+  title       String
+  detail      Json?
+  status      String    @default("pending") // pending | approved | rejected | expired
+  requestedBy String // user id or agent:<role> or system
+  decidedBy   String?
+  decidedAt   DateTime?
+  note        String?
+  createdAt   DateTime  @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, status])
+}
+
+// ---------------------------------------------------------------- Contracts & closing
+
+model ContractTemplate {
+  id          String   @id @default(cuid())
+  workspaceId String
+  name        String
+  kind        String // seller_purchase | assignment | addendum | buyer_purchase
+  state       String? // null = any
+  dealType    String?
+  body        String // text with {{field}} placeholders and [[sign:role]] / [[initial:role]] markers
+  version     Int      @default(1)
+  active      Boolean  @default(true)
+  updatedAt   DateTime @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+}
+
+model Contract {
+  id            String    @id @default(cuid())
+  workspaceId   String
+  opportunityId String
+  templateId    String?
+  kind          String
+  status        String    @default("draft") // draft | sent | viewed | partially_signed | signed | effective | expired | terminated
+  fields        Json
+  body          String // rendered text
+  effectiveAt   DateTime?
+  optionEndsAt  DateTime?
+  emdDueAt      DateTime?
+  closingAt     DateTime?
+  finalPdf      Bytes?
+  finalHash     String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  workspace   Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  opportunity Opportunity   @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  signers     ContractSigner[]
+}
+
+model ContractSigner {
+  id          String    @id @default(cuid())
+  contractId  String
+  role        String // seller | seller2 | buyer | company
+  name        String
+  email       String?
+  phone       String?
+  order       Int       @default(1)
+  tokenHash   String    @unique
+  expiresAt   DateTime
+  status      String    @default("pending") // pending | sent | viewed | signed | declined
+  consentAt   DateTime?
+  viewedAt    DateTime?
+  signedAt    DateTime?
+  signature   String? // data URL of drawn signature or typed name
+  initials    String?
+  ip          String?
+  userAgent   String?
+
+  contract Contract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+}
+
+model TitleCompany {
+  id          String   @id @default(cuid())
+  workspaceId String
+  name        String
+  state       String?
+  email       String?
+  phone       String?
+  contacts    Json? // [{name, role, email, phone}]
+  fees        String?
+  turnaround  String?
+  notes       String?
+  wireVerifiedPhone String? // known number used to verify wire instructions
+
+  workspace    Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  transactions Transaction[]
+}
+
+model Transaction {
+  id             String    @id @default(cuid())
+  workspaceId    String
+  opportunityId  String    @unique
+  titleCompanyId String?
+  buyerId        String?
+  stage          String    @default("CONTRACT_EFFECTIVE")
+  checklist      Json // [{key, label, done, dueAt, note}]
+  inboxAlias     String    @unique // deal-specific email local part
+  assignmentFee  Int?
+  emdAmount      Int?
+  closingAt      DateTime?
+  settlement     Json? // parsed settlement statement + issues
+  paidAt         DateTime?
+  netProceeds    Int?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  workspace    Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  opportunity  Opportunity   @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  titleCompany TitleCompany? @relation(fields: [titleCompanyId], references: [id])
+}
+
+model Payment {
+  id            String    @id @default(cuid())
+  workspaceId   String
+  opportunityId String?
+  kind          String // emd | option_fee | title_fee | assignment_fee | expense | other
+  direction     String // out | in
+  amount        Int
+  payee         String?
+  dueAt         DateTime?
+  status        String    @default("due") // due | awaiting_approval | approved | paid | received | cancelled
+  wireVerifiedAt DateTime?
+  wireVerifiedBy String?
+  reference     String?
+  note          String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+}
+
+// ---------------------------------------------------------------- Engine
+
+model Event {
+  id          String    @id @default(cuid())
+  workspaceId String
+  type        String // e.g. interaction.processed, opportunity.stage_changed, opt_out
+  entityType  String?
+  entityId    String?
+  data        Json?
+  handledAt   DateTime?
+  error       String?
+  createdAt   DateTime  @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([handledAt, createdAt])
+}
+
+model Task {
+  id          String    @id @default(cuid())
+  workspaceId String
+  dedupeKey   String? // same key + open status = no duplicate
+  kind        String // call | sms | email | valuation | matching | follow_up | chase_title | review | approval | process_interaction | buyer_outreach | custom
+  title       String
+  reason      String?
+  entityType  String?
+  entityId    String?
+  contactId   String?
+  assignee    String? // user id or agent:<role>
+  channel     String?
+  priority    Int       @default(2) // 1 high .. 3 low
+  dueAt       DateTime  @default(now())
+  status      String    @default("open") // open | running | done | cancelled | failed
+  attempts    Int       @default(0)
+  payload     Json?
+  cancelIf    String? // human-readable cancellation condition
+  result      String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, status, dueAt])
+  @@index([dedupeKey, status])
+}
+
+model AuditEvent {
+  id          String   @id @default(cuid())
+  workspaceId String
+  actor       String // user id | agent:<role> | system | signer:<id>
+  action      String
+  entityType  String?
+  entityId    String?
+  before      Json?
+  after       Json?
+  meta        Json?
+  createdAt   DateTime @default(now())
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, entityType, entityId])
+}

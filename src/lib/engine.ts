@@ -1,0 +1,248 @@
+import { json } from "./audit";
+import { db } from "./db";
+
+// Event-driven task engine. Events describe what happened; handlers turn them into tasks;
+// tasks are deduplicated so the same work is never done twice.
+
+export async function emit(ws: string, type: string, entity?: { type: string; id: string }, data?: unknown) {
+  await db.event.create({
+    data: { workspaceId: ws, type, entityType: entity?.type, entityId: entity?.id, data: data === undefined ? undefined : json(data) },
+  });
+}
+
+export type NewTask = {
+  kind: string;
+  title: string;
+  reason?: string;
+  entityType?: string;
+  entityId?: string;
+  contactId?: string;
+  assignee?: string;
+  channel?: string;
+  priority?: number;
+  dueAt?: Date;
+  payload?: unknown;
+  cancelIf?: string;
+  dedupeKey?: string;
+};
+
+/** Creates a task, or refreshes the open one with the same dedupe key instead of duplicating it. */
+export async function createTask(ws: string, t: NewTask) {
+  if (t.dedupeKey) {
+    const open = await db.task.findFirst({ where: { workspaceId: ws, dedupeKey: t.dedupeKey, status: { in: ["open", "running"] } } });
+    if (open) {
+      return db.task.update({
+        where: { id: open.id },
+        data: {
+          title: t.title,
+          reason: t.reason ?? open.reason,
+          dueAt: t.dueAt && t.dueAt < open.dueAt ? t.dueAt : open.dueAt,
+          payload: t.payload === undefined ? undefined : json(t.payload),
+        },
+      });
+    }
+  }
+  return db.task.create({
+    data: {
+      workspaceId: ws,
+      kind: t.kind,
+      title: t.title,
+      reason: t.reason,
+      entityType: t.entityType,
+      entityId: t.entityId,
+      contactId: t.contactId,
+      assignee: t.assignee,
+      channel: t.channel,
+      priority: t.priority ?? 2,
+      dueAt: t.dueAt ?? new Date(),
+      payload: t.payload === undefined ? undefined : json(t.payload),
+      cancelIf: t.cancelIf,
+      dedupeKey: t.dedupeKey,
+    },
+  });
+}
+
+export async function cancelTasks(ws: string, where: { contactId?: string; entityId?: string; kinds?: string[] }, why: string) {
+  await db.task.updateMany({
+    where: {
+      workspaceId: ws,
+      status: "open",
+      ...(where.contactId ? { contactId: where.contactId } : {}),
+      ...(where.entityId ? { entityId: where.entityId } : {}),
+      ...(where.kinds ? { kind: { in: where.kinds } } : {}),
+    },
+    data: { status: "cancelled", result: why },
+  });
+}
+
+/** Tasks the worker runs by itself. Everything else waits for a person (or a phone agent via campaigns). */
+export const AUTO_TASKS = new Set([
+  "process_interaction",
+  "valuation",
+  "matching",
+  "hot_score",
+  "call",
+  "sms",
+  "email",
+  "buyer_outreach",
+  "chase_title",
+  "verification_pack",
+  "demand_campaign",
+  "contract_deadline",
+  "send_contract",
+]);
+
+// ---------- Event handlers ----------
+
+export async function handleEvent(e: { id: string; workspaceId: string; type: string; entityType: string | null; entityId: string | null; data: unknown }) {
+  const ws = e.workspaceId;
+  const d = (e.data || {}) as Record<string, unknown>;
+  switch (e.type) {
+    case "interaction.created":
+      if (e.entityId) {
+        await createTask(ws, {
+          kind: "process_interaction",
+          title: "Read conversation and update records",
+          entityType: "interaction",
+          entityId: e.entityId,
+          dedupeKey: `intel:${e.entityId}`,
+        });
+      }
+      break;
+    case "contact.opt_out": {
+      const { optOut } = await import("./eligibility");
+      if (e.entityId) await optOut(ws, e.entityId, String(d.reason || "Asked not to be contacted"), String(d.source || "opt_out"));
+      break;
+    }
+    case "property.changed":
+    case "opportunity.facts_changed":
+      if (e.entityId) {
+        const opps =
+          e.entityType === "property"
+            ? await db.opportunity.findMany({ where: { workspaceId: ws, propertyId: e.entityId, stage: { notIn: ["CLOSED"] } } })
+            : [{ id: e.entityId }];
+        for (const o of opps) {
+          await createTask(ws, {
+            kind: "valuation",
+            title: "Recalculate valuation",
+            reason: "Property or deal details changed",
+            entityType: "opportunity",
+            entityId: o.id,
+            dedupeKey: `valuation:${o.id}`,
+            dueAt: new Date(Date.now() + 60_000),
+          });
+        }
+      }
+      break;
+    case "opportunity.valued":
+    case "buybox.changed":
+      if (e.type === "buybox.changed") {
+        const open = await db.opportunity.findMany({
+          where: { workspaceId: ws, stage: { in: ["NEGOTIATION", "CONTRACT_PREPARATION", "UNDER_CONTRACT", "DISPOSITION", "OFFER_READY"] } },
+          select: { id: true },
+        });
+        for (const o of open) await createTask(ws, { kind: "matching", title: "Re-run buyer matching", entityType: "opportunity", entityId: o.id, dedupeKey: `matching:${o.id}` });
+      } else if (e.entityId) {
+        await createTask(ws, { kind: "matching", title: "Match buyers", entityType: "opportunity", entityId: e.entityId, dedupeKey: `matching:${e.entityId}` });
+      }
+      break;
+    case "opportunity.seller_moved":
+      if (e.entityId) {
+        const { checkNearAgreement } = await import("./deals");
+        await checkNearAgreement(ws, e.entityId);
+      }
+      break;
+    case "interest.updated":
+      if (e.entityId) await createTask(ws, { kind: "hot_score", title: "Update hot-deal score", entityType: "opportunity", entityId: e.entityId, dedupeKey: `hot:${e.entityId}` });
+      break;
+    case "contract.effective":
+      if (e.entityId) {
+        const { onContractEffective } = await import("./contracts");
+        await onContractEffective(ws, e.entityId);
+      }
+      break;
+    case "contract.ended":
+      if (e.entityId) {
+        await db.campaign.updateMany({ where: { workspaceId: ws, opportunityId: e.entityId, status: "running" }, data: { status: "paused" } });
+        await cancelTasks(ws, { entityId: e.entityId, kinds: ["buyer_outreach", "demand_campaign"] }, "Contract ended: disposition stopped");
+      }
+      break;
+  }
+}
+
+export async function runEvents(limit = 25) {
+  const events = await db.event.findMany({ where: { handledAt: null }, orderBy: { createdAt: "asc" }, take: limit });
+  for (const e of events) {
+    try {
+      await handleEvent(e);
+      await db.event.update({ where: { id: e.id }, data: { handledAt: new Date() } });
+    } catch (err) {
+      console.error("[event]", e.type, err);
+      await db.event.update({ where: { id: e.id }, data: { handledAt: new Date(), error: String(err).slice(0, 500) } });
+    }
+  }
+  return events.length;
+}
+
+// ---------- Task execution ----------
+
+export async function executeTask(t: { id: string; workspaceId: string; kind: string; entityId: string | null; contactId: string | null; payload: unknown; attempts: number }) {
+  const ws = t.workspaceId;
+  const p = (t.payload || {}) as Record<string, unknown>;
+  switch (t.kind) {
+    case "process_interaction":
+      return (await import("./intel")).processInteraction(ws, t.entityId!);
+    case "valuation":
+      return (await import("./valuation")).runValuation(ws, t.entityId!, { actor: "system" });
+    case "matching":
+      return (await import("./matching")).runMatching(ws, t.entityId!);
+    case "hot_score":
+      return (await import("./matching")).updateHotScore(ws, t.entityId!);
+    case "verification_pack":
+      return (await import("./deals")).sendVerificationPack(ws, t.entityId!);
+    case "demand_campaign":
+      return (await import("./matching")).startDemandCampaign(ws, t.entityId!, String(p.mode || "anonymous"));
+    case "buyer_outreach":
+      return (await import("./matching")).outreachToBuyer(ws, t.entityId!, t.contactId!, String(p.mode || "anonymous"));
+    case "call":
+      return (await import("./comms")).placeCall(ws, { contactId: t.contactId!, agentRole: String(p.agentRole || "seller_acquisition"), opportunityId: (p.opportunityId as string) || undefined, campaignId: (p.campaignId as string) || undefined, memberId: (p.memberId as string) || undefined });
+    case "sms":
+      return (await import("./comms")).sendSms(ws, { contactId: t.contactId!, body: String(p.body || ""), opportunityId: (p.opportunityId as string) || undefined });
+    case "email":
+      return (await import("./comms")).sendEmail(ws, { to: String(p.to || ""), contactId: t.contactId || undefined, subject: String(p.subject || ""), text: String(p.text || ""), opportunityId: (p.opportunityId as string) || undefined });
+    case "chase_title":
+      return (await import("./title")).chaseTitle(ws, t.entityId!);
+    case "contract_deadline":
+      return (await import("./contracts")).deadlineReminder(ws, t.entityId!, String(p.which || ""));
+    case "send_contract":
+      return (await import("./contracts")).sendForSignature(ws, t.entityId!, "system");
+  }
+  return "nothing to do";
+}
+
+export async function runTasks(limit = 10) {
+  await db.task.updateMany({ where: { status: "running", updatedAt: { lt: new Date(Date.now() - 10 * 60_000) } }, data: { status: "open" } });
+  const due = await db.task.findMany({
+    where: { status: "open", dueAt: { lte: new Date() }, kind: { in: [...AUTO_TASKS] } },
+    orderBy: [{ priority: "asc" }, { dueAt: "asc" }],
+    take: limit,
+  });
+  let n = 0;
+  for (const t of due) {
+    const claimed = await db.task.updateMany({ where: { id: t.id, status: "open" }, data: { status: "running", attempts: { increment: 1 } } });
+    if (!claimed.count) continue;
+    n++;
+    try {
+      const result = await executeTask(t);
+      await db.task.update({ where: { id: t.id }, data: { status: "done", result: typeof result === "string" ? result.slice(0, 500) : "done" } });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      const retry = t.attempts + 1 < 3 && !/not allowed|blocked|suppressed|no .* key|not set/i.test(msg);
+      await db.task.update({
+        where: { id: t.id },
+        data: { status: retry ? "open" : "failed", result: msg.slice(0, 500), dueAt: retry ? new Date(Date.now() + 5 * 60_000 * (t.attempts + 1)) : undefined },
+      });
+    }
+  }
+  return n;
+}

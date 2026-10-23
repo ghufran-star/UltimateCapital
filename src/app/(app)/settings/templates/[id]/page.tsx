@@ -4,7 +4,8 @@ import { Card, Field, PageHeader } from "@/components/ui";
 import { STANDARD_FIELDS } from "@/lib/contracts";
 import { db } from "@/lib/db";
 import { can, pageCtx } from "@/lib/session";
-import { deleteTemplateAction, saveTemplateAction } from "../../../../actions/settings";
+import { deleteTemplateAction, placementsAction, saveTemplateAction, templatePdfAction } from "../../../../actions/settings";
+import { PlacementEditor } from "@/components/placements";
 
 export default async function TemplatePage({ params }: { params: Promise<{ id: string }> }) {
   const c = await pageCtx();
@@ -15,6 +16,28 @@ export default async function TemplatePage({ params }: { params: Promise<{ id: s
   return (
     <div className="max-w-5xl space-y-5">
       <PageHeader back={{ href: "/settings/templates", label: "Contract templates" }} title={t ? t.name : "New template"} />
+      {t && (
+        <Card title="Use your attorney's PDF (recommended)">
+          <p className="mb-3 text-sm text-muted">Upload the contract exactly as your attorney wrote it. Then click on the pages to place the fields we fill in and the boxes where each person signs. The formatting stays exactly as it is.</p>
+          {!ro && (
+            <ActionForm action={templatePdfAction} className="flex flex-wrap items-center gap-2">
+              <input type="hidden" name="templateId" value={t.id} />
+              <input type="file" name="file" accept="application/pdf" className="field max-w-xs" />
+              <Submit className="btn btn-ghost">{t.pdf ? "Replace PDF" : "Upload PDF"}</Submit>
+            </ActionForm>
+          )}
+          {t.pdf && (
+            <div className="mt-4 space-y-2">
+              {!ro && (
+                <ActionButton action={templatePdfAction} hidden={{ templateId: t.id, remove: "1" }} confirm="Remove the PDF and go back to the text version?" className="text-xs text-bad underline">
+                  Remove PDF
+                </ActionButton>
+              )}
+              <PlacementEditor templateId={t.id} initial={(t.placements || []) as never[]} fields={[...STANDARD_FIELDS]} roles={t.kind === "seller_purchase" || t.kind === "addendum" ? ["seller", "seller2", "seller3", "company"] : ["buyer", "company"]} action={placementsAction} />
+            </div>
+          )}
+        </Card>
+      )}
       <div className="grid gap-5 lg:grid-cols-[1fr_280px]">
         <Card>
           <ActionForm action={saveTemplateAction}>
@@ -39,7 +62,7 @@ export default async function TemplatePage({ params }: { params: Promise<{ id: s
               </Field>
             </div>
             <Field label="Contract text">
-              <textarea name="body" defaultValue={t?.body} rows={28} className="field font-mono text-xs" required />
+              <textarea name="body" defaultValue={t?.body} rows={28} className="field font-mono text-xs" />
             </Field>
             {!ro && <Submit>Save{t ? ` (v${t.version + 1})` : ""}</Submit>}
           </ActionForm>

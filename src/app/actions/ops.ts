@@ -125,8 +125,16 @@ export async function settlementAction(_: ActionState, fd: FormData): Promise<Ac
     const c = await requireCtx("closing", { write: true });
     const tx = await db.transaction.findFirstOrThrow({ where: { id: String(fd.get("transactionId")), workspaceId: c.workspace.id } });
     const text = String(fd.get("text") || "");
-    if (text.length < 50) throw new Error("Paste the settlement statement text.");
-    const out = await checkSettlement(c.workspace.id, tx.id, text);
+    const f = fd.get("file");
+    const docs: { mime: string; data: string; name: string }[] = [];
+    if (f && typeof f === "object" && "arrayBuffer" in f && f.size) {
+      const buf = Buffer.from(await f.arrayBuffer());
+      const { saveFile } = await import("@/lib/files");
+      await saveFile(c.workspace.id, { entityType: "opportunity", entityId: tx.opportunityId, kind: "settlement", name: f.name, mime: f.type, data: buf, uploadedBy: c.user.id });
+      if (f.type === "application/pdf" || f.type.startsWith("image/")) docs.push({ mime: f.type, data: buf.toString("base64"), name: f.name });
+    }
+    if (!docs.length && text.length < 50) throw new Error("Upload the settlement statement (PDF or photo) or paste its text.");
+    const out = await checkSettlement(c.workspace.id, tx.id, text, docs);
     return { ok: true, message: out.ok ? "Checked: no issues" : `Issues: ${out.issues.join("; ")}` };
   });
 }

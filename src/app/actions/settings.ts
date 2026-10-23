@@ -225,7 +225,8 @@ export async function saveTemplateAction(_: ActionState, fd: FormData): Promise<
     if (!["owner", "admin"].includes(c.role)) throw new Error("Only owners and admins can change contract templates.");
     const id = str(fd.get("templateId"));
     const body = String(fd.get("body") || "");
-    if (!/\[\[sign:/.test(body)) throw new Error("Add at least one signature marker, e.g. [[sign:seller]] and [[sign:company]].");
+    const existing = id ? await db.contractTemplate.findFirst({ where: { id, workspaceId: c.workspace.id }, select: { pdf: true } }) : null;
+    if (!existing?.pdf && !/\[\[sign:/.test(body)) throw new Error("Add at least one signature marker, e.g. [[sign:seller]] and [[sign:company]], or upload your PDF.");
     const data = { name: str(fd.get("name")) || "Contract", kind: String(fd.get("kind") || "seller_purchase"), state: str(fd.get("state"))?.toUpperCase() || null, dealType: str(fd.get("dealType")), body, active: fd.get("active") !== "off" };
     if (id) {
       await db.contractTemplate.findFirstOrThrow({ where: { id, workspaceId: c.workspace.id } });
@@ -233,6 +234,43 @@ export async function saveTemplateAction(_: ActionState, fd: FormData): Promise<
     } else await db.contractTemplate.create({ data: { ...data, workspaceId: c.workspace.id } });
     await audit(c.workspace.id, c.user.id, "template_saved", { type: "template", id: id || "new" }, { meta: { name: data.name } });
     return { ok: true, message: "Saved", ...(id ? {} : { redirect: "/settings/templates" }) };
+  });
+}
+
+export async function templatePdfAction(_: ActionState, fd: FormData): Promise<ActionState> {
+  return act(async () => {
+    const c = await requireCtx("contracts", { write: true });
+    if (!["owner", "admin"].includes(c.role)) throw new Error("Only owners and admins can change contract templates.");
+    const id = String(fd.get("templateId"));
+    await db.contractTemplate.findFirstOrThrow({ where: { id, workspaceId: c.workspace.id } });
+    if (fd.get("remove")) {
+      await db.contractTemplate.update({ where: { id }, data: { pdf: null, placements: json([]), version: { increment: 1 } } });
+      return { ok: true, message: "PDF removed: the text version is used again." };
+    }
+    const f = fd.get("file");
+    if (!f || typeof f !== "object" || !("arrayBuffer" in f) || !f.size) throw new Error("Choose your PDF.");
+    if (f.type !== "application/pdf") throw new Error("Upload a PDF (save Word documents as PDF first).");
+    const buf = new Uint8Array(await f.arrayBuffer());
+    const { pageCount } = await import("@/lib/pdfdoc");
+    const pages = await pageCount(buf).catch(() => 0);
+    if (!pages) throw new Error("That PDF couldn't be read. If it's password-protected, save an unprotected copy.");
+    await db.contractTemplate.update({ where: { id }, data: { pdf: buf, placements: json([]), version: { increment: 1 } } });
+    await audit(c.workspace.id, c.user.id, "template_pdf_uploaded", { type: "template", id }, { meta: { name: f.name, pages } });
+    return { ok: true, message: `Uploaded (${pages} pages). Now place the fields and signature boxes.` };
+  });
+}
+
+export async function placementsAction(_: ActionState, fd: FormData): Promise<ActionState> {
+  return act(async () => {
+    const c = await requireCtx("contracts", { write: true });
+    if (!["owner", "admin"].includes(c.role)) throw new Error("Only owners and admins can change contract templates.");
+    const id = String(fd.get("templateId"));
+    await db.contractTemplate.findFirstOrThrow({ where: { id, workspaceId: c.workspace.id } });
+    const items = JSON.parse(String(fd.get("placements") || "[]")) as { kind: string; role?: string }[];
+    if (!items.some((p) => p.kind === "sign")) throw new Error("Place at least one signature box.");
+    await db.contractTemplate.update({ where: { id }, data: { placements: json(items), version: { increment: 1 } } });
+    await audit(c.workspace.id, c.user.id, "template_placements", { type: "template", id }, { meta: { count: items.length } });
+    return { ok: true, message: `Saved ${items.length} placements` };
   });
 }
 

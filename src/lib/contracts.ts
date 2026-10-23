@@ -1,10 +1,11 @@
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, randomBytes, randomInt } from "node:crypto";
 import { PDFDocument, PDFFont, rgb, StandardFonts } from "pdf-lib";
 import { audit, json, notify } from "./audit";
 import { setting } from "./config";
 import { db } from "./db";
 import { activePack } from "./eligibility";
 import { createTask, emit } from "./engine";
+import { fillPdf, signPdf, type Placement } from "./pdfdoc";
 import { DEFAULT_TITLE_CHECKLIST } from "./stages";
 import { fill, fullName, usd } from "./util";
 
@@ -75,7 +76,8 @@ export async function createContract(
   o: { opportunityId: string; templateId: string; fields: Record<string, string>; signers: { role: string; name: string; email?: string; phone?: string; order: number }[]; actor: string }
 ) {
   const t = await db.contractTemplate.findUniqueOrThrow({ where: { id: o.templateId } });
-  const body = fill(t.body, o.fields);
+  const body = t.pdf ? `${t.name} (PDF). Fields:\n${Object.entries(o.fields).map(([k, v]) => `${k}: ${v}`).join("\n")}` : fill(t.body, o.fields);
+  const sourcePdf = t.pdf ? new Uint8Array(await fillPdf(t.pdf, (t.placements || []) as unknown as Placement[], o.fields)) : null;
   const c = await db.contract.create({
     data: {
       workspaceId: ws,
@@ -84,6 +86,7 @@ export async function createContract(
       kind: t.kind,
       fields: json(o.fields),
       body,
+      sourcePdf,
       signers: {
         create: o.signers.map((s) => ({ ...s, tokenHash: sha(randomBytes(24).toString("hex")), expiresAt: new Date(Date.now() + 14 * 864e5) })),
       },
@@ -147,9 +150,65 @@ export async function sendForSignature(ws: string, contractId: string, actor: st
     }
     sent.push(s.name);
   }
-  if (sent.length) await db.contract.update({ where: { id: c.id }, data: { status: "sent" } });
+  if (sent.length) {
+    await db.contract.update({ where: { id: c.id }, data: { status: c.status === "partially_signed" ? c.status : "sent" } });
+    // Reminders while anyone is still to sign: after 1 day and after 3 days.
+    for (const h of [24, 72]) await createTask(ws, { kind: "contract_reminder", title: `Signing reminder (${h}h)`, entityType: "contract", entityId: c.id, dueAt: new Date(Date.now() + h * 3600_000), payload: { hours: h }, dedupeKey: `remind:${c.id}:${h}` });
+  }
   await audit(ws, actor, "contract_sent", { type: "contract", id: c.id }, { meta: { to: sent } });
   return sent.length ? `Sent to ${sent.join(", ")}` : "Nothing to send";
+}
+
+/** Re-sends links to whoever hasn't signed yet; stops quietly once everyone has. */
+export async function signingReminder(ws: string, contractId: string) {
+  const c = await db.contract.findUniqueOrThrow({ where: { id: contractId }, include: { signers: true } });
+  if (!["sent", "viewed", "partially_signed"].includes(c.status)) return "Nothing to remind";
+  const waiting = c.signers.filter((s) => s.role !== "company" && !["signed", "declined"].includes(s.status));
+  if (!waiting.length) return "Everyone has signed";
+  const r = await sendForSignature(ws, contractId, "system");
+  await notify(ws, "Signing reminder sent", `${(c.fields as Record<string, string>).property_address || "Agreement"}: still waiting on ${waiting.map((w) => w.name).join(", ")}.`, `/deals/${c.opportunityId}?tab=contracts`);
+  return r;
+}
+
+/** One-time 6-digit code to the signer's phone (or email), required before signing. */
+export async function sendSignCode(signerId: string) {
+  const s = await db.contractSigner.findUniqueOrThrow({ where: { id: signerId }, include: { contract: true } });
+  const ws = s.contract.workspaceId;
+  if (s.otpExpiresAt && s.otpExpiresAt > new Date(Date.now() + 9 * 60_000)) throw new Error("A code was just sent. Wait a minute before asking for another.");
+  const code = String(randomInt(100000, 1000000));
+  await db.contractSigner.update({ where: { id: s.id }, data: { otpHash: sha(`${s.id}:${code}`), otpExpiresAt: new Date(Date.now() + 10 * 60_000) } });
+  const company = (await setting(ws, "COMPANY_NAME")) || "UltimateCapital";
+  const comms = await import("./comms");
+  if (s.phone) await comms.sendOwnerSms(ws, s.phone, `${company}: your signing code is ${code}. It expires in 10 minutes.`);
+  else if (s.email) await comms.sendEmail(ws, { to: s.email, subject: "Your signing code", text: `Your code to sign the agreement is ${code}. It expires in 10 minutes.`, skipChecks: true });
+  await audit(ws, `signer:${s.id}`, "sign_code_sent", { type: "contract", id: s.contractId }, { meta: { to: s.phone ? "phone" : "email" } });
+  return s.phone ? `Code sent to your phone ending ${s.phone.slice(-4)}` : "Code sent to your email";
+}
+
+export function needsSignCode(s: { phone: string | null; email: string | null }) {
+  return !!(s.phone || s.email);
+}
+
+export async function checkSignCode(signerId: string, code: string) {
+  const s = await db.contractSigner.findUniqueOrThrow({ where: { id: signerId } });
+  if (!s.otpHash || !s.otpExpiresAt || s.otpExpiresAt < new Date()) throw new Error("Ask for a new code: the last one expired.");
+  if (sha(`${s.id}:${code.trim()}`) !== s.otpHash) throw new Error("That code isn't right.");
+  await db.contractSigner.update({ where: { id: s.id }, data: { otpVerifiedAt: new Date() } });
+}
+
+export async function declineToSign(signerId: string, reason: string, ip: string, ua: string) {
+  const s = await db.contractSigner.findUniqueOrThrow({ where: { id: signerId }, include: { contract: true } });
+  const ws = s.contract.workspaceId;
+  await db.contractSigner.update({ where: { id: s.id }, data: { status: "declined", declineReason: reason.slice(0, 1000), ip, userAgent: ua.slice(0, 300) } });
+  await db.contract.update({ where: { id: s.contractId }, data: { status: "declined" } });
+  await audit(ws, `signer:${s.id}`, "contract_declined", { type: "contract", id: s.contractId }, { meta: { reason, ip } });
+  await notify(ws, "Contract declined", `${s.name}: ${reason || "no reason given"}`, `/deals/${s.contract.opportunityId}?tab=contracts`);
+  await createTask(ws, { kind: "review", title: `${s.name} declined to sign: follow up`, entityType: "opportunity", entityId: s.contract.opportunityId, priority: 1, dedupeKey: `declined:${s.contractId}` });
+  await cancelReminders(s.contractId);
+}
+
+async function cancelReminders(contractId: string) {
+  await db.task.updateMany({ where: { entityId: contractId, kind: "contract_reminder", status: "open" }, data: { status: "cancelled", result: "No longer needed" } });
 }
 
 export async function signerByToken(token: string) {
@@ -231,6 +290,7 @@ async function afterSignature(ws: string, contractId: string) {
   });
   await audit(ws, "system", "contract_effective", { type: "contract", id: c.id }, { meta: { hash: sha(pdf) } });
   await sendSignedCopies(ws, c.id, pdf).catch((e) => console.error("[contracts] signed copies", e));
+  await cancelReminders(c.id);
   await emit(ws, "contract.effective", { type: "contract", id: c.id });
 }
 
@@ -289,7 +349,9 @@ function wrap(text: string, font: PDFFont, size: number, width: number) {
 export async function buildPdf(ws: string, contractId: string) {
   const c = await db.contract.findUniqueOrThrow({ where: { id: contractId }, include: { signers: { orderBy: { order: "asc" } } } });
   const events = await db.auditEvent.findMany({ where: { workspaceId: ws, entityType: "contract", entityId: c.id }, orderBy: { createdAt: "asc" } });
-  const doc = await PDFDocument.create();
+  const placements = c.templateId ? (((await db.contractTemplate.findUnique({ where: { id: c.templateId }, select: { placements: true } }))?.placements || []) as unknown as Placement[]) : [];
+  const fromPdf = !!c.sourcePdf;
+  const doc = fromPdf ? await PDFDocument.load(await signPdf(c.sourcePdf!, placements, c.signers), { ignoreEncryption: true }) : await PDFDocument.create();
   const font = await doc.embedFont(StandardFonts.Helvetica);
   const bold = await doc.embedFont(StandardFonts.HelveticaBold);
   const W = 612;
@@ -317,8 +379,8 @@ export async function buildPdf(ws: string, contractId: string) {
       y -= h + 6;
     } else if (s.signature) write(`/s/ ${s.signature.replace(/^typed:/, "")}`, 14, bold);
   };
-  // Body, with signature markers replaced by the actual signatures.
-  const parts = c.body.split(/(\[\[(?:sign|initial):[a-z0-9_]+\]\])/g);
+  // Body, with signature markers replaced by the actual signatures (text templates only).
+  const parts = fromPdf ? [] : c.body.split(/(\[\[(?:sign|initial):[a-z0-9_]+\]\])/g);
   for (const part of parts) {
     const m = /\[\[(sign|initial):([a-z0-9_]+)\]\]/.exec(part);
     if (!m) {
@@ -335,18 +397,18 @@ export async function buildPdf(ws: string, contractId: string) {
   }
   // Company signature if the template didn't place it.
   const companySigner = c.signers.find((s) => s.role === "company");
-  if (companySigner && !c.body.includes("[[sign:company]]")) {
+  if (!fromPdf && companySigner && !c.body.includes("[[sign:company]]")) {
     y -= 10;
     write("Accepted by the company:", 10.5, bold);
     await sigImage(companySigner);
     write(`${companySigner.name} · signed ${companySigner.signedAt?.toISOString() || ""}`, 8.5);
   }
   // Audit certificate.
-  newPage();
+  if (!fromPdf) newPage();
   write("Certificate of completion", 16, bold);
   y -= 6;
   write(`Document ID: ${c.id}`);
-  write(`Content hash (SHA-256 of signed text): ${sha(c.body)}`);
+  write(fromPdf ? `Content hash (SHA-256 of the document signers read): ${sha(c.sourcePdf!)}` : `Content hash (SHA-256 of signed text): ${sha(c.body)}`);
   write(`Template: ${c.templateId || "custom"} · kind: ${c.kind}`);
   y -= 6;
   write("Signers", 12, bold);

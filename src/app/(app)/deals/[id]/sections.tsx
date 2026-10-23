@@ -697,7 +697,8 @@ export async function ClosingTab({ opp, ws, writable }: { opp: Deal; ws: string;
             {writable && (
               <ActionForm action={settlementAction}>
                 <input type="hidden" name="transactionId" value={tx.id} />
-                <textarea name="text" rows={4} className="field" placeholder="Paste the settlement statement text to check it against the contract" />
+                <input type="file" name="file" accept=".pdf,image/*" className="field" />
+                <textarea name="text" rows={3} className="field" placeholder="…or paste the settlement statement text" />
                 <Submit className="btn btn-ghost">Check</Submit>
               </ActionForm>
             )}

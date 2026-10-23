@@ -1,5 +1,5 @@
 import { audit, json, notify } from "./audit";
-import { claudeJson } from "./claude";
+import { claudeJson, type Doc } from "./claude";
 import { setting } from "./config";
 import { db } from "./db";
 import { createTask, emit } from "./engine";
@@ -98,16 +98,26 @@ export async function chaseTitle(ws: string, txId: string) {
 }
 
 /** Inbound email webhook: deal inbox (title) or a contact's reply. */
-export async function ingestEmail(ws: string, m: { from: string; to: string; subject: string; text: string }) {
+export type Attachment = { filename: string; mime: string; data: Buffer };
+const READABLE = (a: Attachment) => a.mime === "application/pdf" || /^image\/(png|jpe?g|gif|webp)$/.test(a.mime);
+
+export async function ingestEmail(ws: string, m: { from: string; to: string; subject: string; text: string; attachments?: Attachment[] }) {
   const alias = /(deal-[a-z0-9]{8})@/i.exec(m.to)?.[1]?.toLowerCase();
   if (alias) {
     const tx = await db.transaction.findUnique({ where: { inboxAlias: alias }, include: { opportunity: { include: { property: true } } } });
     if (!tx || tx.workspaceId !== ws) return "Unknown deal inbox";
-    await db.interaction.create({ data: { workspaceId: ws, opportunityId: tx.opportunityId, channel: "email", direction: "inbound", provider: "email", fromAddr: m.from, toAddr: m.to, subject: m.subject, body: m.text, processedAt: new Date() } });
+    const atts = (m.attachments || []).filter((a) => a.data.length && a.data.length <= 15 * 1024 * 1024);
+    await db.interaction.create({ data: { workspaceId: ws, opportunityId: tx.opportunityId, channel: "email", direction: "inbound", provider: "email", fromAddr: m.from, toAddr: m.to, subject: m.subject, body: `${m.text}${atts.length ? `\n\n[Attachments: ${atts.map((a) => a.filename).join(", ")}]` : ""}`, processedAt: new Date() } });
+    const { saveFile } = await import("./files");
+    for (const a of atts) await saveFile(ws, { entityType: "opportunity", entityId: tx.opportunityId, kind: /settle|closing.?disclosure|hud|alta/i.test(a.filename) ? "settlement" : "title", name: a.filename, mime: a.mime, data: a.data, uploadedBy: "agent:transaction", note: `From ${m.from}: ${m.subject}` });
+    // Claude reads the attachments themselves (commitments, settlement statements, wire letters), not just the email body.
+    let budget = 20 * 1024 * 1024;
+    const docs = atts.filter(READABLE).filter((a) => (budget -= a.data.length) >= 0).slice(0, 5).map((a) => ({ mime: a.mime, data: a.data.toString("base64"), name: a.filename }));
     const items = tx.checklist as unknown as Item[];
     const out = await claudeJson<{ summary: string; completed: string[]; needsFromUs: string[]; settlementStatement: boolean; wireInstructions: boolean; closingDate: string }>(ws, {
-      kind: "fast",
-      prompt: `An email from the title company about ${tx.opportunity.property.address}.\nChecklist keys: ${items.map((i) => `${i.key} (${i.label})${i.done ? " [done]" : ""}`).join("; ")}\n\nFrom: ${m.from}\nSubject: ${m.subject}\n"""\n${m.text.slice(0, 15000)}\n"""\nReturn which checklist keys this email shows as completed, anything they need from us, whether it contains a settlement statement or wire instructions, and a closing date (ISO) if given.`,
+      kind: docs.length ? "analysis" : "fast",
+      documents: docs,
+      prompt: `An email from the title company about ${tx.opportunity.property.address}${docs.length ? ` with ${docs.length} attached document(s) (read them)` : ""}.\nChecklist keys: ${items.map((i) => `${i.key} (${i.label})${i.done ? " [done]" : ""}`).join("; ")}\n\nFrom: ${m.from}\nSubject: ${m.subject}\n"""\n${m.text.slice(0, 15000)}\n"""\nReturn which checklist keys this email shows as completed, anything they need from us, whether it contains a settlement statement or wire instructions, and a closing date (ISO) if given.`,
       schema: {
         type: "object",
         properties: {
@@ -124,7 +134,7 @@ export async function ingestEmail(ws: string, m: { from: string; to: string; sub
     for (const k of out.completed) if (items.some((i) => i.key === k)) await setChecklist(ws, tx.id, k, true, "agent:transaction");
     if (out.closingDate && Date.parse(out.closingDate)) await db.transaction.update({ where: { id: tx.id }, data: { closingAt: new Date(out.closingDate) } });
     for (const need of out.needsFromUs) await createTask(ws, { kind: "follow_up", title: `Title needs: ${need}`.slice(0, 200), entityType: "opportunity", entityId: tx.opportunityId, priority: 1, dedupeKey: `titleneed:${tx.id}:${need.slice(0, 30)}` });
-    if (out.settlementStatement) await checkSettlement(ws, tx.id, m.text);
+    if (out.settlementStatement) await checkSettlement(ws, tx.id, m.text, docs);
     if (out.wireInstructions) {
       await notify(ws, "⚠️ Wire instructions received", `For ${tx.opportunity.property.address}. Verify by PHONE with the title company on a number you already know before sending any money.`, `/deals/${tx.opportunityId}`);
     }
@@ -140,7 +150,7 @@ export async function ingestEmail(ws: string, m: { from: string; to: string; sub
 }
 
 /** Reads a settlement statement and flags anything that doesn't match the deal. */
-export async function checkSettlement(ws: string, txId: string, text: string) {
+export async function checkSettlement(ws: string, txId: string, text: string, documents: Doc[] = []) {
   const tx = await db.transaction.findUniqueOrThrow({ where: { id: txId }, include: { opportunity: { include: { property: true } } } });
   const company = (await setting(ws, "COMPANY_NAME")) || "UltimateCapital";
   const buyer = tx.buyerId ? await db.contact.findUnique({ where: { id: tx.buyerId } }) : null;
@@ -149,9 +159,11 @@ export async function checkSettlement(ws: string, txId: string, text: string) {
     prompt: `Check this settlement statement for a wholesale deal.
 Expected: property ${tx.opportunity.property.address}; seller ${seller ? fullName(seller) : "?"}; our company ${company}; end buyer ${buyer ? fullName(buyer) : "?"}; contract price ${usd(tx.opportunity.contractPrice)}; our assignment fee ${usd(tx.assignmentFee)}; earnest money ${usd(tx.emdAmount)}.
 Flag: wrong names or address, wrong price, missing or wrong assignment fee, our earnest money not credited, unexpected charges to us, math errors.
+${documents.length ? "The statement is attached; the text below may be just the covering email." : ""}
 """
 ${text.slice(0, 20000)}
 """`,
+    documents,
     schema: {
       type: "object",
       properties: { purchasePrice: { type: "number" }, assignmentFee: { type: "number" }, ourNetProceeds: { type: "number" }, issues: { type: "array", items: { type: "string" } }, ok: { type: "boolean" } },

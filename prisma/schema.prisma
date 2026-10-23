@@ -587,6 +587,8 @@ model ContractTemplate {
   state       String? // null = any
   dealType    String?
   body        String // text with {{field}} placeholders and [[sign:role]] / [[initial:role]] markers
+  pdf         Bytes? // your attorney's own PDF; when set, fields and signatures are placed on its pages
+  placements  Json? // [{id, page, x, y, w, h, kind: field|sign|initial|date_signed, key?, role?}] in PDF points
   version     Int      @default(1)
   active      Boolean  @default(true)
   updatedAt   DateTime @updatedAt
@@ -603,6 +605,7 @@ model Contract {
   status        String    @default("draft") // draft | sent | viewed | partially_signed | signed | effective | expired | terminated
   fields        Json
   body          String // rendered text
+  sourcePdf     Bytes? // the filled PDF signers read (PDF templates)
   effectiveAt   DateTime?
   optionEndsAt  DateTime?
   emdDueAt      DateTime?
@@ -633,6 +636,10 @@ model ContractSigner {
   signedAt    DateTime?
   signature   String? // data URL of drawn signature or typed name
   initials    String?
+  otpHash     String? // one-time code sent to the signer's phone/email
+  otpExpiresAt DateTime?
+  otpVerifiedAt DateTime?
+  declineReason String?
   ip          String?
   userAgent   String?
 

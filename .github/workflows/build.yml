@@ -20,14 +20,29 @@ jobs:
       SETTINGS_SECRET: ci-secret
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - run: npm install --no-audit --no-fund
       - run: npx tsc --noEmit
       - run: npm run build
-      - name: Create database
-        run: npx prisma db push --skip-generate
+      - name: Upgrade a database from the last live schema
+        run: |
+          git show e6110fc:prisma/schema.prisma > /tmp/old.prisma || git show HEAD~1:prisma/schema.prisma > /tmp/old.prisma
+          npx prisma db push --skip-generate --schema /tmp/old.prisma
+          PGPASSWORD=pg psql -h localhost -U postgres -d uc -v ON_ERROR_STOP=1 -c "INSERT INTO \"Workspace\" (id, name) VALUES ('w1','Old');
+          INSERT INTO \"Contact\" (id, \"workspaceId\", kind, \"updatedAt\") VALUES ('c1','w1','buyer',now()),('c2','w1','buyer',now());
+          INSERT INTO \"Property\" (id, \"workspaceId\", address, city, state, zip, \"updatedAt\") VALUES ('p1','w1','1 Main','Houston','TX','77001',now());
+          INSERT INTO \"Opportunity\" (id, \"workspaceId\", \"propertyId\", \"updatedAt\") VALUES ('o1','w1','p1',now());
+          INSERT INTO \"BuyerInterest\" (id, \"opportunityId\", \"contactId\", \"updatedAt\") VALUES ('i1','o1','c1',now()),('i2','o1','c2',now());"
+          set -o pipefail
+          node scripts/sync-db.mjs 2>&1 | tee sync.log || { grep -E "\[db\]|Error|error" sync.log | tail -8 | while read -r l; do echo "::error title=schema upgrade::$l"; done; exit 1; }
+          grep "\[db\]" sync.log | while read -r l; do echo "::notice title=schema upgrade::$l"; done
+          npx prisma migrate diff --from-url "$DATABASE_URL" --to-schema-datamodel prisma/schema.prisma --exit-code || { echo "::error title=schema upgrade::database still differs from the schema"; exit 1; }
+          PGPASSWORD=pg psql -h localhost -U postgres -d uc -v ON_ERROR_STOP=1 -c 'DELETE FROM "Workspace"'
+
       - name: Build demo and test compliance rules
         run: npx --yes tsx scripts/smoke.ts
       - name: Start app

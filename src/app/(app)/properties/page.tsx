@@ -1,4 +1,7 @@
 import Link from "next/link";
+import { STATUS_LABEL } from "@/lib/numbers";
+import { checkNumbersAction } from "../../actions/agents";
+import { ActionButton } from "@/components/client";
 import type { Prisma } from "@prisma/client";
 import { RowLink } from "@/components/client";
 import { Combo } from "@/components/combo";
@@ -71,6 +74,11 @@ export default async function Sellers({ searchParams }: { searchParams: Promise<
         title="Sellers & properties"
         actions={
           <>
+            {!c.workspace.isDemo && (
+              <ActionButton action={checkNumbersAction} hidden={{ scope: "sellers" }} className="btn btn-ghost" confirm="Check every seller phone number (format and DNC-provider flags; plus a paid mobile/landline lookup if switched on in Settings)?">
+                Check numbers
+              </ActionButton>
+            )}
             <a href={`/api/export/${tab}`} className="btn btn-ghost">
               Export CSV
             </a>
@@ -122,7 +130,10 @@ export default async function Sellers({ searchParams }: { searchParams: Promise<
                       <RowLink key={s.id} href={`/contacts/${s.id}`}>
                         <td>
                           <div className="font-medium">{fullName(s) || "Unnamed"}</div>
-                          <div className="text-xs text-muted">{s.phone || s.email || "no contact details"}</div>
+                          <div className="text-xs text-muted">
+                            {s.phone || s.email || "no contact details"}
+                            {s.phoneStatus && <span className={`ml-1 ${["invalid", "disconnected"].includes(s.phoneStatus) ? "text-bad" : s.phoneStatus === "landline" ? "text-warn" : "text-brand"}`}>· {STATUS_LABEL[s.phoneStatus] || s.phoneStatus}</span>}
+                          </div>
                           {s.doNotContact && <span className="badge badge-bad">DNC</span>}
                         </td>
                         <td className="text-sm">

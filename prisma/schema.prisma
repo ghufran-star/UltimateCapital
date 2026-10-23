@@ -162,6 +162,9 @@ model Contact {
 
   summary     String? // current situation, kept fresh by conversation intelligence
   openQuestions String[] @default([])
+  phoneStatus   String? // valid | mobile | landline | voip | toll_free | invalid | disconnected (number check)
+  phoneCarrier  String?
+  phoneCheckedAt DateTime?
   lastContactAt DateTime?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -390,6 +393,10 @@ model Interaction {
   recordingUrl  String?
   durationSec   Int?
   intel         Json? // structured output of conversation intelligence
+  agentRole     String? // AI agent that handled the call (seller_acquisition, negotiation, receptionist…)
+  tools         String[] @default([]) // tools the agent used during the call
+  transferred   Boolean  @default(false) // warm-transferred to a person
+  endReason     String? // provider's disconnection reason
   processedAt   DateTime?
   createdAt     DateTime @default(now())
 
@@ -398,6 +405,7 @@ model Interaction {
 
   @@index([workspaceId, contactId, createdAt])
   @@index([workspaceId, opportunityId])
+  @@index([workspaceId, agentRole, createdAt])
 }
 
 // Versioned business memory: every fact with its source and kind. Never overwritten.

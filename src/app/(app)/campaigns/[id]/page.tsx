@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { checkNumbersAction } from "../../../actions/agents";
 import { notFound } from "next/navigation";
 import { ActionButton, ActionForm, AutoRefresh, Submit } from "@/components/client";
 import { Card, Empty, Notice, PageHeader, Stat, StatusBadge } from "@/components/ui";
@@ -78,6 +79,9 @@ export default async function CampaignPage({ params }: { params: Promise<{ id: s
         <Card title="Contacts" className="lg:col-span-2" pad={false}>
           {writable && (
             <div className="flex flex-wrap items-start gap-3 border-b border-line p-4">
+              <ActionButton action={checkNumbersAction} hidden={{ scope: `campaign:${id}` }} className="btn btn-ghost btn-sm">
+                Check numbers
+              </ActionButton>
               <ActionButton action={campaignMembersAction} hidden={{ campaignId: id, how: "filter" }} className="btn btn-ghost btn-sm">
                 Add all matching {camp.kind === "seller" ? "sellers" : "buyers"}
               </ActionButton>

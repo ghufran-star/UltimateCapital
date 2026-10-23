@@ -29,6 +29,7 @@ export function startWorker() {
   console.log("[worker] started");
   let lastDial = 0;
   let lastDigest = 0;
+  let lastSync = 0;
   const loop = async () => {
     while (true) {
       let worked = 0;
@@ -43,6 +44,11 @@ export function startWorker() {
         if (Date.now() - lastDial > 60_000) {
           lastDial = Date.now();
           worked += await dialerTick();
+        }
+        if (Date.now() - lastSync > 60 * 60_000) {
+          lastSync = Date.now();
+          const { syncRetellCalls } = await import("./comms");
+          for (const w of await db.workspace.findMany({ where: { isDemo: false }, select: { id: true } })) await syncRetellCalls(w.id, 6).catch((e) => console.error("[retell sync]", e instanceof Error ? e.message : e));
         }
         if (Date.now() - lastDigest > 10 * 60_000) {
           lastDigest = Date.now();

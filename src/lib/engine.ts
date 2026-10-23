@@ -91,6 +91,7 @@ export const AUTO_TASKS = new Set([
   "contract_deadline",
   "send_contract",
   "dnc_scrub",
+  "number_check",
   "contract_reminder",
   "ai_reply",
   "photo_repairs",
@@ -252,6 +253,8 @@ export async function executeTask(t: { id: string; workspaceId: string; kind: st
       return (await import("./replies")).replyToInbound(ws, t.entityId!);
     case "contract_reminder":
       return (await import("./contracts")).signingReminder(ws, t.entityId!);
+    case "number_check":
+      return (await import("./numbers")).checkNumbers(ws, ((p.contactIds as string[]) || []).slice(0, 500), { paid: p.paid === undefined ? undefined : Boolean(p.paid) });
     case "dnc_scrub":
       return (await import("./dnc")).scrubContacts(ws, ((p.contactIds as string[]) || []).slice(0, 500));
   }

@@ -112,6 +112,7 @@ export async function placeCall(
       fromAddr: from.number,
       toAddr: e164(contact.phone),
       intel: json({ agentRole: o.agentRole, memberId: o.memberId }),
+      agentRole: o.agentRole,
     },
   });
   const r = await retell(ws, "POST", "/v2/create-phone-call", {
@@ -132,11 +133,27 @@ export async function onRetellEvent(ws: string, event: string, call: Record<stri
   const meta = (call.metadata || {}) as Record<string, string>;
   const callId = String(call.call_id || "");
   let it = await db.interaction.findUnique({ where: { providerRef: callId } });
-  if (!it && call.direction === "inbound") {
-    const from = e164(String(call.from_number || ""));
-    const contact = from ? await db.contact.findFirst({ where: { workspaceId: ws, OR: [{ phone: from }, { phone2: from }] } }) : null;
+  if (!it && (call.direction === "inbound" || event === "sync")) {
+    // Inbound calls, and calls found by the Retell sync that never reached our webhook.
+    const inbound = call.direction !== "outbound";
+    const other = e164(String((inbound ? call.from_number : call.to_number) || ""));
+    const contact = meta.contactId ? await db.contact.findUnique({ where: { id: meta.contactId } }) : other ? await db.contact.findFirst({ where: { workspaceId: ws, OR: [{ phone: other }, { phone2: other }] } }) : null;
     it = await db.interaction.create({
-      data: { workspaceId: ws, contactId: contact?.id, channel: "call", direction: "inbound", provider: "retell", providerRef: callId, status: "in_progress", fromAddr: from, toAddr: String(call.to_number || "") },
+      data: {
+        workspaceId: ws,
+        contactId: contact?.id,
+        opportunityId: meta.opportunityId || null,
+        campaignId: meta.campaignId || null,
+        channel: "call",
+        direction: inbound ? "inbound" : "outbound",
+        provider: "retell",
+        providerRef: callId,
+        status: "in_progress",
+        fromAddr: e164(String(call.from_number || "")),
+        toAddr: e164(String(call.to_number || "")),
+        agentRole: meta.agentRole || (inbound ? "receptionist" : null),
+        createdAt: call.start_timestamp ? new Date(Number(call.start_timestamp)) : undefined,
+      },
     });
   }
   if (!it) return;
@@ -151,9 +168,16 @@ export async function onRetellEvent(ws: string, event: string, call: Record<stri
     reason === "dial_no_answer" ? "no_answer" : reason === "voicemail_reached" ? "voicemail" : reason === "user_requested_dnc" ? "dnc" : reason === "dial_busy" ? "busy" : reason.startsWith("error") || reason === "dial_failed" ? "failed" : "conversation";
   const start = Number(call.start_timestamp || 0);
   const end = Number(call.end_timestamp || 0);
+  const steps = (call.transcript_with_tool_calls || []) as { role?: string; name?: string }[];
+  const tools = [...new Set(steps.filter((x) => x.role === "tool_call_invocation" && x.name).map((x) => String(x.name)))];
+  const agentRole = meta.agentRole || it.agentRole || (call.agent_id ? (await db.agent.findFirst({ where: { workspaceId: ws, retellAgentId: String(call.agent_id) }, select: { role: true } }))?.role : null) || (it.direction === "inbound" ? "receptionist" : null);
   await db.interaction.update({
     where: { id: it.id },
     data: {
+      agentRole,
+      tools: tools.length ? tools : it.tools,
+      transferred: it.transferred || /transfer/i.test(reason) || tools.includes("transfer_to_human"),
+      endReason: reason || it.endReason,
       status: "done",
       body: transcript || it.body,
       recordingUrl: (call.recording_url as string) || it.recordingUrl,
@@ -162,6 +186,7 @@ export async function onRetellEvent(ws: string, event: string, call: Record<stri
       summary: (analysis.call_summary as string) || it.summary,
     },
   });
+  if (it.contactId && ["invalid_destination", "dial_failed"].includes(reason)) await db.contact.update({ where: { id: it.contactId }, data: { phoneStatus: reason === "invalid_destination" ? "invalid" : "disconnected", phoneCheckedAt: new Date() } }).catch(() => null);
   if (meta.memberId) {
     const done = outcome === "conversation";
     await db.campaignMember
@@ -173,6 +198,33 @@ export async function onRetellEvent(ws: string, event: string, call: Record<stri
   if ((event === "call_analyzed" || (event === "call_ended" && transcript)) && transcript && !it.processedAt) {
     await emit(ws, "interaction.created", { type: "interaction", id: it.id });
   }
+}
+
+/** Pulls recent calls from Retell and fills in any the webhook missed (or that are still incomplete). */
+export async function syncRetellCalls(ws: string, hours = 48) {
+  if (!(await setting(ws, "RETELL_API_KEY"))) return "Retell not connected";
+  let added = 0;
+  let updated = 0;
+  let key: string | undefined;
+  for (let page = 0; page < 10; page++) {
+    const body: Record<string, unknown> = { filter_criteria: { start_timestamp: { lower_threshold: Date.now() - hours * 3600_000 } }, sort_order: "descending", limit: 200 };
+    if (key) body.pagination_key = key;
+    const list = (await retell(ws, "POST", "/v2/list-calls", body)) as unknown as Record<string, unknown>[];
+    if (!Array.isArray(list) || !list.length) break;
+    for (const call of list) {
+      const id = String(call.call_id || "");
+      if (!id || ["registered", "ongoing"].includes(String(call.call_status))) continue;
+      const it = await db.interaction.findUnique({ where: { providerRef: id } });
+      if (it && it.status === "done" && it.body) continue;
+      await onRetellEvent(ws, it ? "call_analyzed" : "sync", call);
+      if (it) updated++;
+      else added++;
+    }
+    if (list.length < 200) break;
+    key = String(list[list.length - 1].call_id);
+  }
+  if (added || updated) await audit(ws, "system", "retell_sync", undefined, { meta: { added, updated } });
+  return `Retell sync: ${added} missing calls added, ${updated} completed`;
 }
 
 // ---------------------------------------------------------------- Twilio

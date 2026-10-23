@@ -43,6 +43,8 @@ export async function checkEligibility(ws: string, contactId: string, channel: C
   if (isCall || channel === "sms") {
     const phone = e164(c.phone);
     if (!phone) return { ok: false, reason: "No valid phone number" };
+    if (c.phoneStatus === "invalid" || c.phoneStatus === "disconnected") return { ok: false, reason: `Number check: ${c.phoneStatus}` };
+    if (channel === "sms" && (c.phoneStatus === "landline" || c.phoneStatus === "toll_free")) return { ok: false, reason: `Number check: ${c.phoneStatus.replace("_", "-")}, can't receive texts` };
     const s = await suppressed(ws, "phone", phone);
     if (s) return { ok: false, reason: s };
     const consent = (ch: string) => c.consents.filter((x) => x.channel === ch).sort((a, b) => +b.createdAt - +a.createdAt)[0];

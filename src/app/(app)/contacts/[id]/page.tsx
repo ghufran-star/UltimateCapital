@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { STATUS_LABEL } from "@/lib/numbers";
+import { checkNumbersAction } from "../../../actions/agents";
 import { label as catLabel, OWNERSHIP_ROLES } from "@/lib/catalog";
 import { notFound } from "next/navigation";
 import { ActionButton, ActionForm, Submit } from "@/components/client";
@@ -47,7 +49,14 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
           <span className="flex flex-wrap items-center gap-2">
             <span className="badge">{label(ct.kind)}</span>
             {ct.doNotContact ? <span className="badge badge-bad">Do not contact</span> : <StatusBadge s={isBuyer ? ct.buyerStatus : ct.sellerStatus} />}
-            {ct.phone} {ct.email && `· ${ct.email}`}
+            {ct.phone}
+            {ct.phone && (ct.phoneStatus ? <span className={`badge ${["invalid", "disconnected"].includes(ct.phoneStatus) ? "badge-bad" : ct.phoneStatus === "landline" || ct.phoneStatus === "toll_free" ? "badge-warn" : "badge-good"}`}>{STATUS_LABEL[ct.phoneStatus] || ct.phoneStatus}{ct.phoneCarrier ? ` · ${ct.phoneCarrier}` : ""}</span> : null)}
+            {ct.phone && writable && (
+              <ActionButton action={checkNumbersAction} hidden={{ scope: `contact:${id}` }} className="text-xs text-brand underline">
+                check number
+              </ActionButton>
+            )}
+            {ct.email && `· ${ct.email}`}
           </span>
         }
         actions={

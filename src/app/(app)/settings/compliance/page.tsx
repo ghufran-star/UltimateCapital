@@ -44,6 +44,8 @@ export default async function Compliance({ searchParams }: { searchParams: Promi
           <li>
             Re-check: {live.recheckHours === 0 ? "before every single contact" : `numbers checked clean within ${live.recheckHours}h aren't re-checked; DNC hits are kept 30 days`}
           </li>
+          <li>Strict DNC mode: {live.strict ? <b>on: a number on any Do Not Call list is never called or texted, even with consent</b> : "off: recorded consent lets you contact a DNC-listed number"}</li>
+          <li>Number checks: invalid, disconnected and toll-free numbers are never dialled; landlines never get texts (from the free format check, your DNC provider, carrier errors, and the optional Twilio lookup).</li>
           <li>Without a working check: {live.require ? "cold outreach is blocked (people with recorded consent can still be contacted)" : "outreach continues on your uploaded lists only"}</li>
           <li>
             Last 24h: {checks24.find((x) => !x.blocked)?._count || 0} clean · {checks24.find((x) => x.blocked)?._count || 0} blocked

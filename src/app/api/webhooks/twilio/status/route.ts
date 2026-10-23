@@ -12,6 +12,13 @@ export async function POST(req: NextRequest) {
   if (sid && st) {
     const failed = ["failed", "undelivered"].includes(st);
     await db.interaction.updateMany({ where: { workspaceId: ws, providerRef: sid }, data: { status: failed ? "failed" : "done", ...(failed ? { outcome: `failed: ${params.ErrorCode || st}` } : {}) } });
+    // Free number intelligence from carrier errors: landline / unreachable / inactive numbers.
+    const code = String(params.ErrorCode || "");
+    const status = code === "21614" || code === "30006" ? "landline" : code === "30005" || code === "21211" ? "disconnected" : null;
+    if (failed && status) {
+      const it = await db.interaction.findFirst({ where: { workspaceId: ws, providerRef: sid }, select: { contactId: true } });
+      if (it?.contactId) await db.contact.update({ where: { id: it.contactId }, data: { phoneStatus: status, phoneCheckedAt: new Date() } });
+    }
   }
   return new Response(null, { status: 204 });
 }

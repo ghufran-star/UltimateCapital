@@ -29,6 +29,7 @@ export const NAV = [
   { href: "/buyers", label: "Buyers", icon: P.users },
   { href: "/campaigns", label: "Campaigns", icon: P.megaphone },
   { href: "/dialer", label: "Power dialer", icon: P.phone },
+  { href: "/agents", label: "Agents & calls", icon: P.bot },
   { href: "/closing", label: "Contracts & Closing", icon: P.key },
   { href: "/ops", label: "AI Operations", icon: P.bot },
   { href: "/reports", label: "Reports", icon: P.chart },

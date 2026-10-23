@@ -25,6 +25,8 @@ export const SETTING_DEFS = [
   { key: "LITIGATOR_PROVIDER", label: "Litigator check provider", secret: false, group: "Compliance", help: "blacklist_alliance or tcpalitigator (blank = none). Blocks known TCPA plaintiffs and serial complainers." },
   { key: "LITIGATOR_KEY", label: "Litigator provider key", secret: true, group: "Compliance", help: "blacklist_alliance: API key. tcpalitigator: username:password." },
   { key: "DNC_RECHECK_HOURS", label: "Re-check numbers after (hours)", secret: false, group: "Compliance", help: "Default 24. A number checked clean within this time isn't re-checked (saves cost). 0 = check before every single call and text." },
+  { key: "DNC_STRICT", label: "Strict DNC mode", secret: false, group: "Compliance", help: "on (default): never call or text a number on any Do Not Call list, even when consent is recorded. off: recorded consent lets you contact a DNC-listed number (the legal exception)." },
+  { key: "NUMBER_LOOKUP", label: "Mobile / landline lookup before texting", secret: false, group: "Compliance", help: "off (default) or twilio. Uses your Twilio account's Lookup (paid per number, cached 90 days) to skip texts to landlines and dead numbers." },
   { key: "DNC_REQUIRE_CHECK", label: "Block cold outreach without a live check", secret: false, group: "Compliance", help: "on (default) or off. When on and no provider is set or the provider is down, calls/texts to people without recorded consent are blocked." },
   { key: "BANK_PROVIDER", label: "Bank feed", secret: false, group: "Money", help: "mercury: deposits are matched to fees daily. Blank = upload CSVs on the Closing page." },
   { key: "BANK_API_KEY", label: "Bank API token", secret: true, group: "Money", help: "Mercury read-only API token." },

@@ -1,4 +1,7 @@
 import Link from "next/link";
+import { STATUS_LABEL } from "@/lib/numbers";
+import { checkNumbersAction } from "../../actions/agents";
+import { ActionButton } from "@/components/client";
 import { RowLink } from "@/components/client";
 import { Card, Empty, PageHeader, StatusBadge } from "@/components/ui";
 import { db } from "@/lib/db";
@@ -30,6 +33,11 @@ export default async function Buyers({ searchParams }: { searchParams: Promise<{
             <Link href="/buyers/find" className="btn btn-ghost">
               Find cash buyers
             </Link>
+            {!c.workspace.isDemo && (
+              <ActionButton action={checkNumbersAction} hidden={{ scope: "buyers" }} className="btn btn-ghost" confirm="Check every buyer phone number?">
+                Check numbers
+              </ActionButton>
+            )}
             <a href="/api/export/buyers" className="btn btn-ghost">
               Export CSV
             </a>
@@ -67,7 +75,10 @@ export default async function Buyers({ searchParams }: { searchParams: Promise<{
                     <RowLink key={b.id} href={`/contacts/${b.id}`}>
                       <td>
                         <div className="font-medium">{fullName(b)}</div>
-                        <div className="text-xs text-muted">{b.company && b.firstName ? b.company : b.phone || b.email}</div>
+                        <div className="text-xs text-muted">
+                          {b.company && b.firstName ? b.company : b.phone || b.email}
+                          {b.phoneStatus && ["invalid", "disconnected", "landline"].includes(b.phoneStatus) && <span className="ml-1 text-warn">· {STATUS_LABEL[b.phoneStatus]}</span>}
+                        </div>
                       </td>
                       <td className="text-xs">
                         {bb ? (

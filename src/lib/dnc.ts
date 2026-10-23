@@ -81,7 +81,7 @@ async function custom(phone: string, url: string, key?: string): Promise<Provide
   return { provider: "custom", listed: !!j.blocked && !j.litigator, litigator: !!j.litigator, invalid: false, reason: j.reason, raw: j };
 }
 
-type Cfg = { dnc: string; dncKey: string; dncUrl: string; lit: string; litKey: string; recheckHours: number; require: boolean };
+type Cfg = { dnc: string; dncKey: string; dncUrl: string; lit: string; litKey: string; recheckHours: number; require: boolean; strict: boolean };
 
 async function config(ws: string): Promise<Cfg> {
   const s = await loadSettings(ws);
@@ -94,6 +94,7 @@ async function config(ws: string): Promise<Cfg> {
     litKey: s.LITIGATOR_KEY || "",
     recheckHours: s.DNC_RECHECK_HOURS === undefined || s.DNC_RECHECK_HOURS === "" ? 24 : Math.max(0, Number(s.DNC_RECHECK_HOURS) || 0),
     require: (s.DNC_REQUIRE_CHECK || "on").toLowerCase() !== "off",
+    strict: (s.DNC_STRICT || "on").toLowerCase() !== "off",
   };
 }
 
@@ -154,7 +155,7 @@ export async function liveCheck(ws: string, phone: string, o: { hasConsent: bool
   const inv = results.find((r) => r.invalid);
   if (inv) return { ok: false, reason: `${inv.reason || "Invalid number"} (${inv.provider})`, results };
   const listed = results.find((r) => r.listed);
-  if (listed && !o.hasConsent) return { ok: false, reason: `${listed.reason || "On a Do Not Call list"} (${listed.provider}${listed.code ? ` ${listed.code}` : ""})`, results };
+  if (listed && (!o.hasConsent || c.strict)) return { ok: false, reason: `${listed.reason || "On a Do Not Call list"} (${listed.provider}${listed.code ? ` ${listed.code}` : ""})`, results };
   if (c.require && !o.hasConsent) {
     if (!c.dnc) return { ok: false, reason: "No live DNC check is set up (Settings → Integrations → Compliance). Cold outreach is blocked until one is.", results };
     if (failures.length && !results.some((r) => r.provider === c.dnc)) return { ok: false, reason: `DNC check unavailable, blocked to be safe (${failures[0]})`, results };
@@ -180,7 +181,7 @@ export async function scrubContacts(ws: string, contactIds: string[]) {
 
 export async function dncStatus(ws: string) {
   const c = await config(ws);
-  return { provider: c.dnc || null, litigator: c.lit || null, recheckHours: c.recheckHours, require: c.require };
+  return { provider: c.dnc || null, litigator: c.lit || null, recheckHours: c.recheckHours, require: c.require, strict: c.strict };
 }
 
 /** Pre-checks numbers against DNC/litigator lists in the background (100 per task). */

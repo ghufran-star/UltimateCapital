@@ -112,7 +112,13 @@ export async function updateHotScore(ws: string, opportunityId: string) {
     const pack = await activePack(ws, opp.property.state);
     const emd = pack?.contracts.typicalEmd || 1000;
     await db.opportunity.update({ where: { id: opportunityId }, data: { emdRecommendedAt: new Date() } });
-    await db.payment.create({ data: { workspaceId: ws, opportunityId, kind: "emd", direction: "out", amount: emd, status: "awaiting_approval", payee: "Title / escrow company", note: "Hot deal: recommended earnest money" } });
+    const { getAutonomy } = await import("./controls");
+    const auto = emd <= (await getAutonomy(ws)).emdAutoUnder;
+    await db.payment.create({ data: { workspaceId: ws, opportunityId, kind: "emd", direction: "out", amount: emd, status: auto ? "approved" : "awaiting_approval", payee: "Title / escrow company", note: auto ? "Hot deal: earnest money approved automatically (under your limit)" : "Hot deal: recommended earnest money" } });
+    if (auto) {
+      await notify(ws, `🔥 Hot deal (${score})`, `${serious.length} serious investors on ${opp.property.address}. Earnest money ${usd(emd)} approved automatically under your limit; verify wire instructions before paying.`, `/deals/${opportunityId}?tab=closing`);
+      return `Hot score ${score}`;
+    }
     const ap = await db.approval.create({
       data: {
         workspaceId: ws,

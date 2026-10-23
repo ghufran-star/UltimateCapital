@@ -9,6 +9,7 @@ export const dynamic = "force-dynamic";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const c = await pageCtx();
+  const paused = await db.pause.findFirst({ where: { workspaceId: c.workspace.id, scope: "all" } });
   const demoEmpty = c.workspace.isDemo && (await db.opportunity.count({ where: { workspaceId: c.workspace.id } })) === 0;
   const [approvals, unread, memberships] = await Promise.all([
     db.approval.count({ where: { workspaceId: c.workspace.id, status: "pending" } }),
@@ -35,6 +36,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
               </ActionButton>
             )}
           </div>
+        )}
+        {paused && (
+          <Link href="/settings/controls" className="block bg-bad px-4 py-2 text-center text-sm font-semibold text-white">
+            All outreach is paused. Resume in Controls →
+          </Link>
         )}
         <header className="flex items-center justify-between gap-3 px-4 pt-[max(12px,env(safe-area-inset-top))] pb-2 md:px-8">
           <Link href="/" className="flex items-center gap-2 md:hidden">

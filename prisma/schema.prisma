@@ -561,6 +561,7 @@ model Approval {
   title       String
   detail      Json?
   status      String    @default("pending") // pending | approved | rejected | expired
+  announcedAt DateTime? // owner sent text/email links
   requestedBy String // user id or agent:<role> or system
   decidedBy   String?
   decidedAt   DateTime?
@@ -778,4 +779,28 @@ model LoginAttempt {
   createdAt DateTime @default(now())
 
   @@index([key, createdAt])
+}
+
+// Owner kill switches: everything, a state, a channel or an agent role.
+model Pause {
+  id          String   @id @default(cuid())
+  workspaceId String
+  scope       String // all | state | channel | agent
+  value       String? // TX | ai_call / human_call / sms / email | seller_acquisition…
+  reason      String?
+  createdBy   String
+  createdAt   DateTime @default(now())
+
+  @@index([workspaceId])
+}
+
+// One-time links that let an owner/admin decide an approval from a text or email.
+model ApprovalLink {
+  id         String    @id @default(cuid())
+  approvalId String
+  userId     String
+  tokenHash  String    @unique
+  expiresAt  DateTime
+  usedAt     DateTime?
+  createdAt  DateTime  @default(now())
 }

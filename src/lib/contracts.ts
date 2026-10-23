@@ -93,6 +93,38 @@ export async function createContract(
   return c;
 }
 
+/** Fills a template from the deal and sets up its signers (sellers on title, or the chosen buyer, then the company). */
+export async function prepareContract(ws: string, o: { opportunityId: string; templateId: string; overrides?: Record<string, string>; userId: string }) {
+  const opp = await db.opportunity.findFirstOrThrow({ where: { id: o.opportunityId, workspaceId: ws }, include: { property: { include: { ownerships: { include: { contact: true } } } } } });
+  const t = await db.contractTemplate.findFirstOrThrow({ where: { id: o.templateId, workspaceId: ws } });
+  if (t.kind === "seller_purchase" && !opp.approvedAt) throw new Error("The owner must approve the final offer before a seller contract can go out (Approvals).");
+  const fields: Record<string, string> = { ...(await contractFields(ws, o.opportunityId, t.kind)), ...(o.overrides || {}) };
+  const signers: { role: string; name: string; email?: string; phone?: string; order: number }[] = [];
+  if (t.kind === "seller_purchase" || t.kind === "addendum") {
+    const owners = opp.property.ownerships.map((x) => x.contact);
+    if (!owners.length) throw new Error("Link the seller to the property first.");
+    owners.forEach((x, i) => signers.push({ role: i ? `seller${i + 1}` : "seller", name: `${x.firstName} ${x.lastName}`.trim(), email: x.email || undefined, phone: x.phone || undefined, order: 1 }));
+  } else {
+    const tx = await db.transaction.findUnique({ where: { opportunityId: o.opportunityId } });
+    const b = tx?.buyerId ? await db.contact.findUnique({ where: { id: tx.buyerId } }) : null;
+    if (!b) throw new Error("Choose the buyer first (Buyers tab on the deal).");
+    signers.push({ role: "buyer", name: `${b.firstName} ${b.lastName}`.trim() || b.company || "Buyer", email: b.email || undefined, phone: b.phone || undefined, order: 1 });
+  }
+  const u = await db.user.findUniqueOrThrow({ where: { id: o.userId } });
+  signers.push({ role: "company", name: u.name, email: u.email, order: 99 });
+  const k = await createContract(ws, { opportunityId: o.opportunityId, templateId: t.id, fields, signers, actor: o.userId });
+  const closing = fields.closing_date ? new Date(fields.closing_date) : null;
+  if (closing && !isNaN(+closing)) await db.contract.update({ where: { id: k.id }, data: { closingAt: closing } });
+  return k;
+}
+
+/** The best active template for a deal: its state's version first, then the all-states one. */
+export async function defaultTemplate(ws: string, opportunityId: string, kind: string) {
+  const opp = await db.opportunity.findUniqueOrThrow({ where: { id: opportunityId }, include: { property: true } });
+  const ts = await db.contractTemplate.findMany({ where: { workspaceId: ws, kind, active: true, OR: [{ state: opp.property.state }, { state: null }] }, orderBy: { updatedAt: "desc" } });
+  return ts.find((t) => t.state === opp.property.state && (!t.dealType || t.dealType === opp.dealType)) || ts.find((t) => !t.dealType || t.dealType === opp.dealType) || null;
+}
+
 /** Sends signing links to the next external signers (company countersigns in the app). */
 export async function sendForSignature(ws: string, contractId: string, actor: string) {
   const c = await db.contract.findUniqueOrThrow({ where: { id: contractId }, include: { signers: { orderBy: { order: "asc" } } } });
@@ -352,7 +384,9 @@ export async function onContractEffective(ws: string, contractId: string) {
     }
     if (c.optionEndsAt) await createTask(ws, { kind: "contract_deadline", title: "Option period ends: decide to proceed or terminate", entityType: "contract", entityId: c.id, dueAt: new Date(+c.optionEndsAt - 2 * 864e5), priority: 1, payload: { which: "option" }, dedupeKey: `deadline:${c.id}:option` });
     if (c.closingAt) await createTask(ws, { kind: "contract_deadline", title: "Closing date approaching", entityType: "contract", entityId: c.id, dueAt: new Date(+c.closingAt - 5 * 864e5), payload: { which: "closing" }, dedupeKey: `deadline:${c.id}:closing` });
-    await createTask(ws, { kind: "demand_campaign", title: "Market the deal to matching buyers (with disclosure)", entityType: "opportunity", entityId: opp.id, payload: { mode: "full" }, priority: 1, dedupeKey: `demand:${opp.id}:full` });
+    const { getAutonomy } = await import("./controls");
+    if ((await getAutonomy(ws)).fullMarketing === "auto") await createTask(ws, { kind: "demand_campaign", title: "Market the deal to matching buyers (with disclosure)", entityType: "opportunity", entityId: opp.id, payload: { mode: "full" }, priority: 1, dedupeKey: `demand:${opp.id}:full` });
+    else await (await import("./deals")).requestApproval(ws, opp.id, "full_marketing", `Under contract: market ${(c.fields as Record<string, string>).property_address || "the deal"} to buyers?`, "system", { mode: "full" });
     await createTask(ws, { kind: "review", title: "Open title: send the contract package to the title company", entityType: "opportunity", entityId: opp.id, priority: 1, dedupeKey: `opentitle:${opp.id}` });
   } else if (c.kind === "assignment" || c.kind === "buyer_purchase") {
     const tx = await db.transaction.findUnique({ where: { opportunityId: opp.id } });

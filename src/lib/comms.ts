@@ -84,6 +84,11 @@ export async function placeCall(
     await audit(ws, "system", "call_blocked", { type: "contact", id: o.contactId }, { meta: { reason: elig.reason } });
     return `Blocked: ${elig.reason}`;
   }
+  const rolePause = await (await import("./controls")).pauseReason(ws, { role: o.agentRole });
+  if (rolePause) {
+    if (o.memberId) await db.campaignMember.update({ where: { id: o.memberId }, data: { status: "retry", nextAttemptAt: new Date(Date.now() + 30 * 60_000), lastOutcome: "paused" } }).catch(() => null);
+    return `Rescheduled: ${rolePause}`;
+  }
   const contact = await db.contact.findUniqueOrThrow({ where: { id: o.contactId } });
   const { agentForRole, buildDynamicVariables, syncAgent } = await import("./agents");
   const agent = await agentForRole(ws, o.agentRole);
@@ -233,6 +238,16 @@ export async function sendSms(ws: string, o: { contactId: string; body: string; 
   });
   await db.contact.update({ where: { id: o.contactId }, data: { lastContactAt: new Date() } });
   return `Texted ${fullName(contact)}`;
+}
+
+/** Internal text to a team member's own phone (approval links, alerts). Not outreach: no contact record, no campaign. */
+export async function sendOwnerSms(ws: string, phone: string, body: string) {
+  const to = e164(phone);
+  if (!to) return "No valid phone";
+  const from = await fromNumber(ws, null);
+  if (!from) return "No phone number set up";
+  await twilio(ws, "/Messages.json", { To: to, From: from.number, Body: body });
+  return "Sent";
 }
 
 const STOP_WORDS = /^\s*(stop|stopall|unsubscribe|cancel|end|quit|remove me|do not (call|text)|don'?t (call|text))\b/i;

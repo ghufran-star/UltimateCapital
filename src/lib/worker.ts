@@ -39,6 +39,7 @@ export function startWorker() {
         }
         worked += await runEvents(25);
         worked += await runTasks(8);
+        worked += await (await import("./controls")).announceApprovals();
         if (Date.now() - lastDial > 60_000) {
           lastDial = Date.now();
           worked += await dialerTick();

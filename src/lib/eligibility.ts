@@ -35,6 +35,10 @@ export async function checkEligibility(ws: string, contactId: string, channel: C
   const pack = await activePack(ws, state);
   if (!pack) return { ok: false, reason: state ? `No active State Pack for ${state}. Activate it in Settings → States.` : "Contact has no state: add one so the right rules apply." };
 
+  const { pauseReason } = await import("./controls");
+  const paused = await pauseReason(ws, { state, channel });
+  if (paused) return { ok: false, reason: paused, retryAt: new Date(now.getTime() + 30 * 60_000), pack };
+
   const isCall = channel === "ai_call" || channel === "human_call";
   if (isCall || channel === "sms") {
     const phone = e164(c.phone);

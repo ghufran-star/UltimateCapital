@@ -84,7 +84,7 @@ export async function buyerAuthorityFor(ws: string, opportunityId: string, conta
   return a;
 }
 
-async function requestApproval(ws: string, opportunityId: string, kind: string, title: string, requestedBy: string, detail: Record<string, unknown>) {
+export async function requestApproval(ws: string, opportunityId: string, kind: string, title: string, requestedBy: string, detail: Record<string, unknown>) {
   const existing = await db.approval.findFirst({ where: { workspaceId: ws, entityId: opportunityId, kind, status: "pending" } });
   if (existing) return existing;
   const ap = await db.approval.create({ data: { workspaceId: ws, kind, entityType: "opportunity", entityId: opportunityId, title, detail: json(detail), requestedBy } });
@@ -101,7 +101,12 @@ export async function checkNearAgreement(ws: string, opportunityId: string) {
   const params = await dealParams(ws, opportunityId);
   if (!nearAgreement(opp.sellerLowest, calc.maxBuy, params)) return;
   await createTask(ws, { kind: "verification_pack", title: "Send verification pack to owner", entityType: "opportunity", entityId: opportunityId, priority: 1, dedupeKey: `verify:${opportunityId}` });
-  await createTask(ws, { kind: "demand_campaign", title: "Start anonymous buyer demand check", entityType: "opportunity", entityId: opportunityId, priority: 1, payload: { mode: "anonymous" }, dedupeKey: `demand:${opportunityId}` });
+  const { getAutonomy } = await import("./controls");
+  if ((await getAutonomy(ws)).demandCheck === "auto") {
+    await createTask(ws, { kind: "demand_campaign", title: "Start anonymous buyer demand check", entityType: "opportunity", entityId: opportunityId, priority: 1, payload: { mode: "anonymous" }, dedupeKey: `demand:${opportunityId}` });
+  } else {
+    await requestApproval(ws, opportunityId, "demand_check", `Start the anonymous buyer check for ${opp.property.address}?`, "system", { mode: "anonymous" });
+  }
 }
 
 async function requestFinalApproval(ws: string, opportunityId: string, requestedBy: string, why: string) {
@@ -209,7 +214,22 @@ export async function decideApproval(ws: string, approvalId: string, decision: "
       });
       if (agreed) await db.offer.create({ data: { opportunityId: opp.id, side: "seller", contactId: opp.sellerId, round: 99, price: agreed, by: "us", authority: "approved", status: "proposed" } });
       await emit(ws, "opportunity.facts_changed", { type: "opportunity", id: opp.id });
-      await createTask(ws, { kind: "review", title: "Prepare and send the seller contract", entityType: "opportunity", entityId: opp.id, priority: 1, assignee: userId, dedupeKey: `contract:${opp.id}` });
+      const { getAutonomy } = await import("./controls");
+      let sent = false;
+      if ((await getAutonomy(ws)).sendSellerContract === "auto") {
+        const { defaultTemplate, prepareContract, sendForSignature } = await import("./contracts");
+        const t = await defaultTemplate(ws, opp.id, "seller_purchase");
+        if (t && !t.body.startsWith("SAMPLE ONLY")) {
+          try {
+            const k = await prepareContract(ws, { opportunityId: opp.id, templateId: t.id, userId });
+            await sendForSignature(ws, k.id, userId);
+            sent = true;
+          } catch (e) {
+            await notify(ws, "Contract not sent automatically", e instanceof Error ? e.message : String(e), `/deals/${opp.id}?tab=contracts`);
+          }
+        }
+      }
+      if (!sent) await createTask(ws, { kind: "review", title: "Prepare and send the seller contract", entityType: "opportunity", entityId: opp.id, priority: 1, assignee: userId, dedupeKey: `contract:${opp.id}` });
       break;
     }
     case "emd": {
@@ -219,6 +239,10 @@ export async function decideApproval(ws: string, approvalId: string, decision: "
     }
     case "payment":
       await db.payment.update({ where: { id: ap.entityId }, data: { status: "approved" } }).catch(() => null);
+      break;
+    case "demand_check":
+    case "full_marketing":
+      await createTask(ws, { kind: "demand_campaign", title: ap.kind === "demand_check" ? "Start anonymous buyer demand check" : "Market the deal to matching buyers (with disclosure)", entityType: "opportunity", entityId: ap.entityId, priority: 1, payload: { mode: ap.kind === "demand_check" ? "anonymous" : "full" }, dedupeKey: `demand:${ap.entityId}:${ap.kind}` });
       break;
     case "price_below_floor": {
       const cid = (d.contactId as string) || null;

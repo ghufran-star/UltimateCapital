@@ -30,6 +30,7 @@ export default async function SettingsHome() {
   ];
   const done = steps.filter((x) => x[0]).length;
   const links: [string, string, string][] = [
+    ["Controls", "Pause switches, what runs by itself, spend cap", "/settings/controls"],
     ["Deal rules", `v${rs?.version ?? 1} live · offers, margins, buyer rounds, variations`, "/settings/rules"],
     ["States", `${packs.filter((p) => p.status === "active").length} active of ${packs.length}`, "/settings/states"],
     ["AI agents", `${agents.length} agents · 6-layer prompts`, "/settings/agents"],

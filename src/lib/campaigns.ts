@@ -46,7 +46,13 @@ export async function campaignSpend(ws: string, campaignId: string) {
 export async function dialerTick() {
   const running = await db.campaign.findMany({ where: { status: "running", workspace: { isDemo: false } } });
   let queued = 0;
+  const held = new Map<string, string | null>();
   for (const c of running) {
+    if (!held.has(c.workspaceId)) {
+      const { pauseReason, spendCapReason } = await import("./controls");
+      held.set(c.workspaceId, (await pauseReason(c.workspaceId, {})) || (await spendCapReason(c.workspaceId)));
+    }
+    if (held.get(c.workspaceId)) continue;
     const s = { ...DEFAULT_CAMPAIGN, ...((c.settings as Partial<CampaignSettings>) || {}) };
     if (s.budget) {
       const spend = await campaignSpend(c.workspaceId, c.id);

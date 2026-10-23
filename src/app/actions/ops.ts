@@ -4,9 +4,10 @@ import { headers } from "next/headers";
 import type { ActionState } from "@/components/client";
 import { audit, json } from "@/lib/audit";
 import { addMembers, DEFAULT_CAMPAIGN, roleFor, settingsJson, type CampaignSettings } from "@/lib/campaigns";
-import { contractFields, countersign, createContract, sendForSignature, terminateContract } from "@/lib/contracts";
+import { countersign, prepareContract, sendForSignature, terminateContract } from "@/lib/contracts";
 import { db } from "@/lib/db";
 import { decideApproval, sendVerificationPack } from "@/lib/deals";
+import { getAutonomy } from "@/lib/controls";
 import { emit, executeTask } from "@/lib/engine";
 import { assertDeal, requireCtx } from "@/lib/session";
 import { checkSettlement, ensureTransaction, openTitle, reconcileBankCsv, setChecklist } from "@/lib/title";
@@ -39,31 +40,13 @@ export async function verificationPackAction(_: ActionState, fd: FormData): Prom
 export async function createContractAction(_: ActionState, fd: FormData): Promise<ActionState> {
   return act(async () => {
     const c = await requireCtx("contracts", { write: true });
-    const ws = c.workspace.id;
     const opportunityId = String(fd.get("opportunityId"));
     await assertDeal(c, opportunityId);
-    const opp = await db.opportunity.findFirstOrThrow({ where: { id: opportunityId, workspaceId: c.workspace.id }, include: { property: { include: { ownerships: { include: { contact: true } } } } } });
-    const t = await db.contractTemplate.findFirstOrThrow({ where: { id: String(fd.get("templateId")), workspaceId: ws } });
-    if (t.kind === "seller_purchase" && !opp.approvedAt) throw new Error("The owner must approve the final offer before a seller contract can go out (Approvals).");
-    const fields = await contractFields(ws, opportunityId, t.kind);
-    for (const [k, v] of fd.entries()) if (k.startsWith("f_")) fields[k.slice(2) as keyof typeof fields] = String(v);
-    const signers: { role: string; name: string; email?: string; phone?: string; order: number }[] = [];
-    if (t.kind === "seller_purchase") {
-      const owners = opp.property.ownerships.map((o) => o.contact);
-      if (!owners.length) throw new Error("Link the seller to the property first.");
-      owners.forEach((o, i) => signers.push({ role: i ? `seller${i + 1}` : "seller", name: `${o.firstName} ${o.lastName}`.trim(), email: o.email || undefined, phone: o.phone || undefined, order: 1 }));
-    } else {
-      const tx = await db.transaction.findUnique({ where: { opportunityId } });
-      const b = tx?.buyerId ? await db.contact.findUnique({ where: { id: tx.buyerId } }) : null;
-      if (!b) throw new Error("Choose the buyer first (Buyers tab on the deal).");
-      signers.push({ role: "buyer", name: `${b.firstName} ${b.lastName}`.trim() || b.company || "Buyer", email: b.email || undefined, phone: b.phone || undefined, order: 1 });
-    }
-    signers.push({ role: "company", name: c.user.name, email: c.user.email, order: 99 });
-    const k = await createContract(ws, { opportunityId, templateId: t.id, fields, signers, actor: c.user.id });
-    const closing = fields.closing_date ? new Date(fields.closing_date) : null;
-    if (closing && !isNaN(+closing)) await db.contract.update({ where: { id: k.id }, data: { closingAt: closing } });
+    const overrides: Record<string, string> = {};
+    for (const [k, v] of fd.entries()) if (k.startsWith("f_")) overrides[k.slice(2)] = String(v);
+    const k = await prepareContract(c.workspace.id, { opportunityId, templateId: String(fd.get("templateId")), overrides, userId: c.user.id });
     if (fd.get("send") === "on") {
-      const msg = await sendForSignature(ws, k.id, c.user.id);
+      const msg = await sendForSignature(c.workspace.id, k.id, c.user.id);
       return { ok: true, message: `Contract created. ${msg}` };
     }
     return { ok: true, message: "Contract draft created" };
@@ -165,7 +148,9 @@ export async function paymentAction(_: ActionState, fd: FormData): Promise<Actio
       }
       if (status) data.status = status;
       if (fd.has("reference")) data.reference = str(fd.get("reference"));
-      if (status === "awaiting_approval") {
+      if (status === "awaiting_approval" && p.amount <= (await getAutonomy(ws)).paymentAutoUnder) {
+        data.status = "approved";
+      } else if (status === "awaiting_approval") {
         await db.approval.create({ data: { workspaceId: ws, kind: "payment", entityType: "payment", entityId: p.id, title: `Approve payment of $${p.amount.toLocaleString()} (${p.kind}) to ${p.payee || "payee"}`, requestedBy: c.user.id, detail: json({ amount: p.amount, kind: p.kind }) } });
       }
       await db.payment.update({ where: { id }, data });

@@ -2,11 +2,15 @@
 // Without DATABASE_URL the app still boots and shows setup instructions instead of crashing.
 import { execSync, spawn } from "node:child_process";
 
+// The result is shown on /api/health so a failed schema update is visible, not silent.
+process.env.UC_SCHEMA_SYNC = "skipped";
 if (process.env.DATABASE_URL) {
   try {
     execSync("npx prisma db push --skip-generate", { stdio: "inherit" });
+    process.env.UC_SCHEMA_SYNC = "ok";
   } catch {
-    console.error("[start] Database schema sync failed; starting anyway. Check DATABASE_URL.");
+    process.env.UC_SCHEMA_SYNC = "failed";
+    console.error("[start] Database schema sync failed; starting anyway. Check DATABASE_URL and the log above.");
   }
 } else {
   console.warn("[start] DATABASE_URL is not set. Add a Postgres database in Railway.");

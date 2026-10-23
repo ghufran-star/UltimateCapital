@@ -96,8 +96,6 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
               )}
             </Card>
           )}
-            </Card>
-          )}
 
           {isBuyer && (
             <Card title="Buy boxes">

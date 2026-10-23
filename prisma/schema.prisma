@@ -231,6 +231,8 @@ model Property {
   rentEstimate Int?
   taxes        Int?
   titleFlags   String[] @default([]) // probate liens back_taxes
+  excludedComps String[] @default([]) // comp addresses you ruled out
+  manualComps  Json? // [{address, price, sqft, date}] comps you added by hand
   photos       String[] @default([])
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt

@@ -11,7 +11,7 @@ import { INTEREST_STAGES, INTEREST_OTHER, label } from "@/lib/stages";
 import { dealInboxAddress } from "@/lib/title";
 import { ago, fmtDate, fullName, usd } from "@/lib/util";
 import { checklistAction, countersignAction, createContractAction, openTitleAction, paymentAction, reprocessAction, sendContractAction, settlementAction, taskAction, terminateContractAction, transactionAction } from "../../../actions/ops";
-import { addNoteAction, chooseBuyerAction, dealCampaignAction, interestAction, recordOfferAction, revalueAction, updatePropertyAction } from "../../../actions/records";
+import { addNoteAction, chooseBuyerAction, compAction, dealCampaignAction, interestAction, recordOfferAction, revalueAction, updatePropertyAction } from "../../../actions/records";
 import type { Deal } from "./include";
 
 // ---------- Numbers ----------
@@ -192,6 +192,7 @@ export function NumbersTab({ opp, v, calc, params, writable, playbook }: { opp: 
                     <th className="text-right">Sq ft</th>
                     <th>Date</th>
                     <th>Source</th>
+                    {writable && <th></th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -202,13 +203,46 @@ export function NumbersTab({ opp, v, calc, params, writable, playbook }: { opp: 
                       <td className="text-right tnum">{x.sqft?.toLocaleString() ?? "—"}</td>
                       <td className="text-xs">{x.date ? fmtDate(x.date) : "—"}</td>
                       <td className="max-w-48 truncate text-xs text-muted">{x.source}</td>
+                      {writable && (
+                        <td className="text-right">
+                          <ActionButton action={compAction} hidden={{ propertyId: p.id, what: x.source === "Added by you" ? "remove" : "exclude", address: x.address || "" }} className="text-xs text-muted underline">
+                            {x.source === "Added by you" ? "Remove" : "Rule out"}
+                          </ActionButton>
+                        </td>
+                      )}
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
           ) : (
-            <Empty title="No comps yet">Add a RentCast key in Settings → Integrations, or enter a verified ARV.</Empty>
+            <Empty title="No comps yet">Add a RentCast key in Settings → Integrations, add your own comps below, or enter a verified ARV.</Empty>
+          )}
+          {p.excludedComps.length > 0 && (
+            <div className="border-t border-line px-4 py-2 text-xs text-muted">
+              Ruled out:{" "}
+              {p.excludedComps.map((a) => (
+                <span key={a} className="mr-2">
+                  {a}{" "}
+                  {writable && (
+                    <ActionButton action={compAction} hidden={{ propertyId: p.id, what: "restore", address: a }} className="underline">
+                      restore
+                    </ActionButton>
+                  )}
+                </span>
+              ))}
+            </div>
+          )}
+          {writable && (
+            <ActionForm action={compAction} className="flex flex-wrap items-end gap-2 border-t border-line p-4" resetOnOk>
+              <input type="hidden" name="propertyId" value={p.id} />
+              <input type="hidden" name="what" value="add" />
+              <input name="address" className="field min-w-48 flex-1" placeholder="Comp address" />
+              <input name="price" className="field w-28" placeholder="Sold $" inputMode="numeric" />
+              <input name="sqft" className="field w-24" placeholder="Sq ft" inputMode="numeric" />
+              <input name="date" type="date" className="field w-auto" />
+              <Submit className="btn btn-ghost">Add comp</Submit>
+            </ActionForm>
           )}
         </Card>
       </div>

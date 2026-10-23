@@ -27,6 +27,9 @@ export default async function Buyers({ searchParams }: { searchParams: Promise<{
         sub="Investors, their buy boxes, buying timeline and contact limits."
         actions={
           <>
+            <Link href="/buyers/find" className="btn btn-ghost">
+              Find cash buyers
+            </Link>
             <Link href="/buyers/import" className="btn btn-ghost">
               Import CSV
             </Link>

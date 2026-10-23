@@ -67,6 +67,18 @@ async function rentcast(ws: string, p: { address: string; city: string; state: s
   return { asIs: Number(value.price || 0) || null, comps, rent: rent ? Number(rent.rent || 0) || null : null };
 }
 
+/**
+ * Keeps comps that are truly comparable: not ruled out by you, sold in the last 12 months, within 1.5 miles,
+ * and within 35% of the subject's size. If that leaves fewer than 3, the size and distance limits are relaxed.
+ */
+function filterComps(comps: Comp[], p: { sqft: number | null; excludedComps: string[] }) {
+  const ex = new Set(p.excludedComps.map((a) => a.toLowerCase()));
+  const base = comps.filter((c) => !ex.has(c.address.toLowerCase()) && c.price > 0);
+  const recent = base.filter((c) => !c.date || !Date.parse(c.date) || Date.now() - Date.parse(c.date) < 365 * 864e5);
+  const strict = recent.filter((c) => (!c.distance || c.distance <= 1.5) && (!p.sqft || !c.sqft || Math.abs(c.sqft - p.sqft) / p.sqft <= 0.35));
+  return strict.length >= 3 ? strict : recent.length >= 3 ? recent : base;
+}
+
 /** ARV from comps: upper-quartile price per sq ft × subject sq ft (renovated comps sell at the top of the range). */
 function arvFromComps(comps: Comp[], sqft: number | null) {
   const ppsf = comps.filter((c) => c.price && c.sqft).map((c) => c.price / c.sqft!).sort((a, b) => a - b);
@@ -122,10 +134,11 @@ export async function runValuation(ws: string, opportunityId: string, opts: { ac
   let arv: number | null = manualArv;
   let confidence = manualArv ? 0.9 : 0.4;
   const blockedReasons: string[] = [];
+  const manual = ((p.manualComps || []) as unknown as Comp[]).map((c) => ({ ...c, source: "Added by you" }));
   try {
     const rc = await rentcast(ws, p);
     if (rc) {
-      comps = rc.comps;
+      comps = [...filterComps(rc.comps, p), ...manual];
       asIs = rc.asIs;
       rent = rc.rent || rent;
       if (!arv) {
@@ -133,13 +146,14 @@ export async function runValuation(ws: string, opportunityId: string, opts: { ac
         confidence = comps.length >= 5 ? 0.7 : 0.5;
       }
     } else if (!arv) {
-      const w = await webResearch(ws, p);
-      comps = w.comps;
+      const w = manual.length >= 3 ? { comps: [] as Comp[], rent: null } : await webResearch(ws, p);
+      comps = [...filterComps(w.comps, p), ...manual];
       rent = w.rent || rent;
       arv = arvFromComps(comps, p.sqft);
-      confidence = comps.length >= 4 ? 0.5 : 0.3;
-    }
+      confidence = manual.length >= 3 ? 0.7 : comps.length >= 4 ? 0.5 : 0.3;
+    } else comps = manual;
   } catch (e) {
+    if (manual.length) comps = manual;
     blockedReasons.push(`Comps unavailable: ${e instanceof Error ? e.message : String(e)}`);
   }
   if (!arv) blockedReasons.push("No ARV: add comps data (RentCast key) or enter a verified ARV.");

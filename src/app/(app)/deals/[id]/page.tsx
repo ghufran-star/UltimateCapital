@@ -13,6 +13,7 @@ import { verificationPackAction } from "../../../actions/ops";
 import { callContactAction, recordOfferAction, textContactAction, updateDealAction } from "../../../actions/records";
 import { dealInclude } from "./include";
 import { FilesPanel } from "@/components/files";
+import { photoRepairsAction } from "../../../actions/files";
 import { buyerLadder, contractBasis } from "@/lib/deals";
 import { ActivityTab, BuyersTab, ClosingTab, ContractsTab, NumbersTab } from "./sections";
 
@@ -284,6 +285,14 @@ export default async function DealPage({ params, searchParams }: { params: Promi
       {tab === "files" && (
         <Card title="Photos and documents">
           <FilesPanel ws={ws} entityType="opportunity" entityId={opp.id} writable={!c.workspace.isDemo} investorShare />
+          {!c.workspace.isDemo && (
+            <div className="mt-4 border-t border-line pt-3">
+              <ActionButton action={photoRepairsAction} hidden={{ opportunityId: opp.id }} className="btn btn-ghost btn-sm">
+                Estimate repairs from photos
+              </ActionButton>
+              <span className="ml-2 text-xs text-muted">Runs by itself when new photos are uploaded.</span>
+            </div>
+          )}
         </Card>
       )}
       {tab === "activity" && <ActivityTab opp={opp} ws={ws} writable={!c.workspace.isDemo} />}

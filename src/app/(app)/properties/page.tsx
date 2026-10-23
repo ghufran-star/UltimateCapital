@@ -36,6 +36,9 @@ export default async function Sellers({ searchParams }: { searchParams: Promise<
         title="Sellers & properties"
         actions={
           <>
+            <Link href="/properties/find" className="btn btn-ghost">
+              Find sellers
+            </Link>
             <Link href="/properties/import" className="btn btn-ghost">
               Import CSV
             </Link>

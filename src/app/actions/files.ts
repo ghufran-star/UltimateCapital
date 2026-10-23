@@ -21,8 +21,22 @@ export async function uploadFilesAction(_: ActionState, fd: FormData): Promise<A
     for (const f of files) {
       await saveFile(c.workspace.id, { entityType, entityId, kind: String(fd.get("kind") || (f.type.startsWith("image/") ? "photo" : "other")), name: f.name, mime: f.type, data: Buffer.from(await f.arrayBuffer()), uploadedBy: c.user.id, shared: fd.get("shared") === "on", note: str(fd.get("note")) });
     }
+    if (entityType === "opportunity" && files.some((f) => /^image\/(png|jpe?g|gif|webp)$/.test(f.type))) {
+      const { createTask } = await import("@/lib/engine");
+      await createTask(c.workspace.id, { kind: "photo_repairs", title: "Estimate repairs from the new photos", entityType: "opportunity", entityId, dueAt: new Date(Date.now() + 60_000), dedupeKey: `photos:${entityId}` });
+    }
     if (entityType === "contact" && fd.get("kind") === "pof") await db.contact.update({ where: { id: entityId }, data: { fundsVerified: false } });
     return { ok: true, message: `${files.length} file${files.length > 1 ? "s" : ""} uploaded` };
+  });
+}
+
+export async function photoRepairsAction(_: ActionState, fd: FormData): Promise<ActionState> {
+  return act(async () => {
+    const c = await requireCtx("deals", { write: true });
+    const id = String(fd.get("opportunityId"));
+    await assertDeal(c, id);
+    const { repairsFromPhotos } = await import("@/lib/photos");
+    return { ok: true, message: await repairsFromPhotos(c.workspace.id, id) };
   });
 }
 

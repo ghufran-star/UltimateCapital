@@ -195,6 +195,29 @@ export async function updatePropertyAction(_: ActionState, fd: FormData): Promis
   });
 }
 
+/** Rule a comp out, bring it back, or add your own comp. The valuation re-runs. */
+export async function compAction(_: ActionState, fd: FormData): Promise<ActionState> {
+  return act(async () => {
+    const c = await requireCtx("deals", { write: true });
+    const p = await db.property.findFirstOrThrow({ where: { id: String(fd.get("propertyId")), workspaceId: c.workspace.id } });
+    const what = String(fd.get("what"));
+    const address = String(fd.get("address") || "").trim();
+    const manual = (p.manualComps || []) as { address: string; price: number; sqft?: number; date?: string }[];
+    if (what === "exclude" && address) await db.property.update({ where: { id: p.id }, data: { excludedComps: [...new Set([...p.excludedComps, address])] } });
+    else if (what === "restore") await db.property.update({ where: { id: p.id }, data: { excludedComps: p.excludedComps.filter((a) => a !== address) } });
+    else if (what === "remove") await db.property.update({ where: { id: p.id }, data: { manualComps: json(manual.filter((m) => m.address !== address)) } });
+    else if (what === "add") {
+      const price = int(fd.get("price"));
+      if (!address || !price) throw new Error("Enter the comp's address and sold price.");
+      manual.push({ address, price, sqft: int(fd.get("sqft")) || undefined, date: str(fd.get("date")) || undefined });
+      await db.property.update({ where: { id: p.id }, data: { manualComps: json(manual) } });
+    }
+    await audit(c.workspace.id, c.user.id, `comp_${what}`, { type: "property", id: p.id }, { meta: { address } });
+    await emit(c.workspace.id, "property.changed", { type: "property", id: p.id });
+    return { ok: true, message: "Updated. The valuation will refresh in a minute." };
+  });
+}
+
 // ---------- Contacts ----------
 
 export async function updateContactAction(_: ActionState, fd: FormData): Promise<ActionState> {

@@ -93,6 +93,7 @@ export const AUTO_TASKS = new Set([
   "dnc_scrub",
   "contract_reminder",
   "ai_reply",
+  "photo_repairs",
 ]);
 
 // ---------- Event handlers ----------
@@ -239,6 +240,8 @@ export async function executeTask(t: { id: string; workspaceId: string; kind: st
       return (await import("./contracts")).deadlineReminder(ws, t.entityId!, String(p.which || ""));
     case "send_contract":
       return (await import("./contracts")).sendForSignature(ws, t.entityId!, "system");
+    case "photo_repairs":
+      return (await import("./photos")).repairsFromPhotos(ws, t.entityId!);
     case "ai_reply":
       return (await import("./replies")).replyToInbound(ws, t.entityId!);
     case "contract_reminder":

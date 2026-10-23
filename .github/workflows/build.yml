@@ -38,4 +38,6 @@ jobs:
         run: bash scripts/crawl.sh
       - name: Server log on failure
         if: failure()
-        run: tail -n 200 server.log || true
+        run: |
+          tail -n 200 server.log || true
+          grep -iE "error|prisma" server.log | sort | uniq -c | sort -rn | head -20 | while read -r l; do echo "::error title=server log::$l"; done

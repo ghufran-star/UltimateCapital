@@ -11,6 +11,7 @@ import { liveCheck } from "../src/lib/dnc";
 const sha = (s: string) => createHash("sha256").update(s).digest("hex");
 const fail = (m: string) => {
   console.error(`SMOKE FAIL: ${m}`);
+  console.log(`::error title=smoke::${m.replace(/\n/g, " ")}`);
   process.exit(1);
 };
 
@@ -99,5 +100,6 @@ async function main() {
 
 main().catch((e) => {
   console.error(e);
+  console.log(`::error title=smoke crash::${String(e instanceof Error ? e.stack || e.message : e).replace(/\n/g, " | ").slice(0, 3000)}`);
   process.exit(1);
 });

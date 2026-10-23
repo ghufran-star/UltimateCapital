@@ -377,6 +377,8 @@ Rules:
     await notify(ws, `Conflicting info: ${fullName(contact)}`, intel.contradictions.map((c) => `${c.field}: was "${c.before}", now "${c.now}"`).join("; "), opp ? `/deals/${opp.id}` : `/contacts/${contact.id}`);
   }
 
-  await db.interaction.update({ where: { id: it.id }, data: { summary: intel.summary, outcome: it.outcome && it.outcome !== "conversation" ? it.outcome : intel.outcome, intel: json(intel), processedAt: new Date() } });
+  const prevIntel = (it.intel || {}) as Record<string, unknown>;
+  await db.interaction.update({ where: { id: it.id }, data: { summary: intel.summary, outcome: it.outcome && it.outcome !== "conversation" ? it.outcome : intel.outcome, intel: json({ ...prevIntel, ...intel }), processedAt: new Date() } });
+  if (it.channel === "call" && it.provider === "retell") await createTask(ws, { kind: "call_qa", title: "Check the call against the rules", entityType: "interaction", entityId: it.id, dedupeKey: `qa:${it.id}` });
   return intel.summary;
 }

@@ -985,6 +985,16 @@ async function seed(ws: string, ownerId: string) {
     }),
   });
 
+  // ---------- call quality checks and agent history ----------
+  const aiCalls = await db.interaction.findMany({ where: { workspaceId: ws, channel: "call", provider: "retell", body: { not: null } }, take: 16 });
+  for (const [i, k] of aiCalls.entries()) {
+    const flags = i === 3 ? [{ rule: "Price above authority", severity: "high", quote: "Agent said $131,000; highest released $126,000" }] : i % 5 === 1 ? [{ rule: "AI disclosure late", severity: "medium", quote: "Disclosed it was an AI only after 40 seconds" }] : [];
+    await db.interaction.update({ where: { id: k.id }, data: { intel: json({ ...((k.intel || {}) as object), agentRole: (k.intel as { agentRole?: string } | null)?.agentRole || pick(["seller_acquisition", "property_discovery", "negotiation"]), qa: { score: flags.some((f) => f.severity === "high") ? 58 : flags.length ? 81 : between(86, 97), flags, pricesSaid: [], summary: "Sample review", checkedAt: new Date().toISOString() } }) } });
+  }
+  for (const a of await db.agent.findMany({ where: { workspaceId: ws, role: { in: ["seller_acquisition", "negotiation"] } } })) {
+    await db.agentVersion.create({ data: { workspaceId: ws, agentId: a.id, version: 1, name: a.name, persona: a.persona.replace("a local company", "a company"), playbook: a.playbook.split("\n").slice(0, 4).join("\n"), tools: a.tools, createdBy: ownerId, createdAt: ago(30) } });
+  }
+
   // ---------- tasks ----------
   const tasks: Prisma.TaskCreateManyInput[] = [];
   const t = (x: Partial<Prisma.TaskCreateManyInput> & { title: string; kind: string }) => tasks.push({ workspaceId: ws, priority: 2, dueAt: new Date(), status: "open", ...x });

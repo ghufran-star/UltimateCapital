@@ -200,11 +200,48 @@ export async function saveAgentAction(_: ActionState, fd: FormData): Promise<Act
     const id = String(fd.get("agentId"));
     const a = await db.agent.findFirstOrThrow({ where: { id, workspaceId: c.workspace.id } });
     const data = { name: str(fd.get("name")) || a.name, persona: String(fd.get("persona") || a.persona), playbook: String(fd.get("playbook") || a.playbook), voiceId: str(fd.get("voiceId")), active: fd.get("active") === "on", tools: fd.getAll("tools").map(String) };
+    await db.agentVersion.create({ data: { workspaceId: c.workspace.id, agentId: a.id, version: a.version, name: a.name, persona: a.persona, playbook: a.playbook, tools: a.tools, voiceId: a.voiceId, createdBy: c.user.id } });
     await db.agent.update({ where: { id }, data: { ...data, version: { increment: 1 } } });
     await audit(c.workspace.id, c.user.id, "agent_saved", { type: "agent", id }, { before: { persona: a.persona, playbook: a.playbook }, after: data });
     let msg = "Saved";
     if (fd.get("sync") === "on") msg += `. ${await syncAgent(c.workspace.id, id)}`;
     return { ok: true, message: msg };
+  });
+}
+
+export async function restoreAgentAction(_: ActionState, fd: FormData): Promise<ActionState> {
+  return act(async () => {
+    const c = await requireCtx("settings", { write: true });
+    const v = await db.agentVersion.findFirstOrThrow({ where: { id: String(fd.get("versionId")), workspaceId: c.workspace.id } });
+    const a = await db.agent.findFirstOrThrow({ where: { id: v.agentId, workspaceId: c.workspace.id } });
+    await db.agentVersion.create({ data: { workspaceId: c.workspace.id, agentId: a.id, version: a.version, name: a.name, persona: a.persona, playbook: a.playbook, tools: a.tools, voiceId: a.voiceId, createdBy: c.user.id } });
+    await db.agent.update({ where: { id: a.id }, data: { name: v.name, persona: v.persona, playbook: v.playbook, tools: v.tools, voiceId: v.voiceId, version: { increment: 1 } } });
+    await audit(c.workspace.id, c.user.id, "agent_restored", { type: "agent", id: a.id }, { meta: { from: v.version } });
+    let msg = `Restored v${v.version}`;
+    if (a.retellAgentId) msg += `. ${await syncAgent(c.workspace.id, a.id)}`;
+    return { ok: true, message: msg };
+  });
+}
+
+/** Rings your own phone with this agent, using a real contact's context (or sample context), so you can hear it. */
+export async function testAgentAction(_: ActionState, fd: FormData): Promise<ActionState> {
+  return act(async () => {
+    const c = await requireCtx("settings", { write: true });
+    if (!c.user.phone) throw new Error("Add your mobile in Settings → My profile first.");
+    const a = await db.agent.findFirstOrThrow({ where: { id: String(fd.get("agentId")), workspaceId: c.workspace.id } });
+    const rid = a.retellAgentId || (await syncAgent(c.workspace.id, a.id));
+    const num = await db.phoneNumber.findFirst({ where: { workspaceId: c.workspace.id } });
+    if (!num) throw new Error("Add a phone number in Settings → Phone numbers first.");
+    const contactId = str(fd.get("contactId"));
+    const { buildDynamicVariables, transferNumber } = await import("@/lib/agents");
+    const company = (await (await import("@/lib/config")).setting(c.workspace.id, "COMPANY_NAME")) || c.workspace.name;
+    const vars = contactId
+      ? await buildDynamicVariables(c.workspace.id, { contactId, agentId: a.id })
+      : { company, agent_name: a.name, contact_name: "Test Seller", first_name: "there", property_address: "123 Sample St, Houston", identification: `This is ${a.name} with ${company}.`, ai_disclosure: "Just so you know, I'm an AI assistant.", state_rules: "Test call.", context: "This is a test call from the owner to hear the agent.", known_facts: "None yet.", open_questions: "Motivation, timeline, condition.", deal_details: "3 bed / 2 bath single-family, 1,450 sq ft, moderate rehab.", marketing_note: "", opening_line: "Hi, is this the owner?", transfer_number: await transferNumber(c.workspace.id, c.user.id) };
+    const { retell } = await import("@/lib/comms");
+    await retell(c.workspace.id, "POST", "/v2/create-phone-call", { from_number: num.number, to_number: c.user.phone, override_agent_id: rid, retell_llm_dynamic_variables: vars, metadata: { ws: c.workspace.id, test: "1" } });
+    await audit(c.workspace.id, c.user.id, "agent_test_call", { type: "agent", id: a.id });
+    return { ok: true, message: "Calling your phone now." };
   });
 }
 

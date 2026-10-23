@@ -818,7 +818,7 @@ export async function ActivityTab({ opp, ws, writable }: { opp: Deal; ws: string
   );
 }
 
-export function InteractionList({ items, writable = false }: { items: { id: string; channel: string; direction: string; createdAt: Date; summary: string | null; body: string | null; outcome: string | null; recordingUrl: string | null; durationSec: number | null; subject: string | null; processedAt: Date | null; contact?: { firstName: string; lastName: string; company: string | null } | null }[]; writable?: boolean }) {
+export function InteractionList({ items, writable = false }: { items: { id: string; channel: string; direction: string; createdAt: Date; summary: string | null; body: string | null; outcome: string | null; recordingUrl: string | null; durationSec: number | null; subject: string | null; processedAt: Date | null; intel?: unknown; contact?: { firstName: string; lastName: string; company: string | null } | null }[]; writable?: boolean }) {
   return (
     <ul className="divide-y divide-line">
       {items.map((i) => (
@@ -843,6 +843,15 @@ export function InteractionList({ items, writable = false }: { items: { id: stri
             </details>
           )}
           {i.recordingUrl && <audio controls preload="none" src={i.recordingUrl} className="mt-2 h-8 w-full" />}
+          {(() => {
+            const qa = ((i.intel || {}) as { qa?: { score: number; flags: { rule: string; severity: string; quote: string }[] } }).qa;
+            if (!qa) return null;
+            return (
+              <div className={`mt-2 rounded-lg px-2 py-1 text-xs ${qa.flags.some((f) => f.severity === "high") ? "bg-bad-soft text-bad" : "bg-soft text-muted"}`}>
+                Call quality {Math.round(qa.score)}/100{qa.flags.length ? ` · ${qa.flags.map((f) => `${f.rule}: “${f.quote.slice(0, 60)}”`).join(" · ")}` : " · no rule issues"}
+              </div>
+            );
+          })()}
           {writable && ["call", "sms", "email"].includes(i.channel) && !i.processedAt && (
             <ActionButton action={reprocessAction} hidden={{ interactionId: i.id }}>
               Analyse

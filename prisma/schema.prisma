@@ -836,3 +836,20 @@ model FileObject {
 
   @@index([workspaceId, entityType, entityId])
 }
+
+// Every saved version of an agent's prompt, for history and restore.
+model AgentVersion {
+  id          String   @id @default(cuid())
+  workspaceId String
+  agentId     String
+  version     Int
+  name        String
+  persona     String
+  playbook    String
+  tools       String[] @default([])
+  voiceId     String?
+  createdBy   String
+  createdAt   DateTime @default(now())
+
+  @@index([agentId, version])
+}

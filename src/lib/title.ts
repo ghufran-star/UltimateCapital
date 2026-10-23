@@ -181,16 +181,22 @@ export async function reconcileBankCsv(ws: string, csv: string, actor: string) {
   const rows = csv
     .split(/\r?\n/)
     .map((l) => l.split(",").map((x) => x.replace(/^"|"$/g, "").trim()))
-    .filter((r) => r.length >= 2);
+    .filter((r) => r.length >= 2)
+    .map((r) => ({ amount: Math.round(Number(r[r.length - 1].replace(/[$,]/g, ""))), description: r.slice(0, -1).join(" ") }));
+  return reconcileRows(ws, rows, actor);
+}
+
+/** Matches deposits to expected incoming payments (fees) by amount; a match marks the deal paid and closed. */
+export async function reconcileRows(ws: string, rows: { amount: number; description: string }[], actor: string) {
   const expected = await db.payment.findMany({ where: { workspaceId: ws, direction: "in", status: { in: ["due", "approved"] } } });
   const matched: string[] = [];
   for (const r of rows) {
-    const amount = Math.round(Number(r[r.length - 1].replace(/[$,]/g, "")));
+    const amount = r.amount;
     if (!amount || amount <= 0) continue;
     const p = expected.find((e) => Math.abs(e.amount - amount) <= 1 && !matched.includes(e.id));
     if (!p) continue;
     matched.push(p.id);
-    await db.payment.update({ where: { id: p.id }, data: { status: "received", reference: r.slice(0, -1).join(" ").slice(0, 200) } });
+    await db.payment.update({ where: { id: p.id }, data: { status: "received", reference: r.description.slice(0, 200) } });
     if (p.opportunityId) {
       const tx = await db.transaction.findUnique({ where: { opportunityId: p.opportunityId } });
       if (tx) {

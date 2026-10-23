@@ -4,7 +4,8 @@ import { Card, Field, PageHeader } from "@/components/ui";
 import { AGENT_ROLES, HARD_RULES, ROLE_TOOLS, TOOL_DEFS } from "@/lib/agents";
 import { db } from "@/lib/db";
 import { can, pageCtx } from "@/lib/session";
-import { saveAgentAction, syncAgentAction } from "../../../../actions/settings";
+import { restoreAgentAction, saveAgentAction, syncAgentAction, testAgentAction } from "../../../../actions/settings";
+import { ago } from "@/lib/util";
 
 export default async function AgentPage({ params }: { params: Promise<{ id: string }> }) {
   const c = await pageCtx();
@@ -13,6 +14,10 @@ export default async function AgentPage({ params }: { params: Promise<{ id: stri
   if (!a) notFound();
   const ro = c.workspace.isDemo || !can(c.role, "settings");
   const allowed = ROLE_TOOLS[a.role] || Object.keys(TOOL_DEFS);
+  const [versions, sample] = await Promise.all([
+    db.agentVersion.findMany({ where: { agentId: a.id }, orderBy: { version: "desc" }, take: 15 }),
+    db.contact.findMany({ where: { workspaceId: c.workspace.id, kind: ["buyer_acquisition", "disposition"].includes(a.role) ? "buyer" : "seller" }, orderBy: { updatedAt: "desc" }, take: 30, select: { id: true, firstName: true, lastName: true, company: true } }),
+  ]);
   return (
     <div className="max-w-4xl space-y-5">
       <PageHeader
@@ -72,7 +77,50 @@ export default async function AgentPage({ params }: { params: Promise<{ id: stri
             </div>
           </Card>
         )}
-      </ActionForm>
+            </ActionForm>
+      {!ro && (
+        <Card title="Hear it: test call to your phone">
+          <ActionForm action={testAgentAction} className="flex flex-wrap items-end gap-2">
+            <input type="hidden" name="agentId" value={a.id} />
+            <select name="contactId" className="field w-auto">
+              <option value="">Sample context</option>
+              {sample.map((x) => (
+                <option key={x.id} value={x.id}>
+                  As if calling {`${x.firstName} ${x.lastName}`.trim() || x.company}
+                </option>
+              ))}
+            </select>
+            <Submit className="btn btn-ghost">Call me</Submit>
+          </ActionForm>
+          <p className="mt-2 text-xs text-muted">The agent rings your mobile with that person&apos;s real context, so you hear exactly what they would. Nothing is sent to the contact.</p>
+        </Card>
+      )}
+      <Card title="Version history" pad={false}>
+        {versions.length ? (
+          <ul className="divide-y divide-line">
+            {versions.map((v) => (
+              <li key={v.id} className="px-4 py-3 text-sm">
+                <div className="flex items-center justify-between">
+                  <span>
+                    v{v.version} <span className="text-xs text-muted">· saved {ago(v.createdAt)}</span>
+                  </span>
+                  {!ro && (
+                    <ActionButton action={restoreAgentAction} hidden={{ versionId: v.id }} confirm={`Restore v${v.version}? The current version is kept in history.`}>
+                      Restore
+                    </ActionButton>
+                  )}
+                </div>
+                <details>
+                  <summary className="cursor-pointer text-xs text-muted">Show</summary>
+                  <pre className="mt-1 max-h-60 overflow-auto rounded-lg bg-soft p-2 text-xs whitespace-pre-wrap">{`${v.persona}\n\nPLAYBOOK\n${v.playbook}\n\nTOOLS: ${v.tools.join(", ")}`}</pre>
+                </details>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="px-4 py-3 text-sm text-muted">Each save keeps the previous version here.</p>
+        )}
+      </Card>
     </div>
   );
 }

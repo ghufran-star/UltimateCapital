@@ -26,6 +26,8 @@ export const SETTING_DEFS = [
   { key: "LITIGATOR_KEY", label: "Litigator provider key", secret: true, group: "Compliance", help: "blacklist_alliance: API key. tcpalitigator: username:password." },
   { key: "DNC_RECHECK_HOURS", label: "Re-check numbers after (hours)", secret: false, group: "Compliance", help: "Default 24. A number checked clean within this time isn't re-checked (saves cost). 0 = check before every single call and text." },
   { key: "DNC_REQUIRE_CHECK", label: "Block cold outreach without a live check", secret: false, group: "Compliance", help: "on (default) or off. When on and no provider is set or the provider is down, calls/texts to people without recorded consent are blocked." },
+  { key: "BANK_PROVIDER", label: "Bank feed", secret: false, group: "Money", help: "mercury: deposits are matched to fees daily. Blank = upload CSVs on the Closing page." },
+  { key: "BANK_API_KEY", label: "Bank API token", secret: true, group: "Money", help: "Mercury read-only API token." },
   { key: "COST_PER_CALL_MINUTE", label: "Cost per AI call minute ($)", secret: false, group: "Costs", help: "Used for campaign budgets and spend reports. Default 0.12 (Retell + telephony)." },
   { key: "COST_PER_SMS", label: "Cost per text ($)", secret: false, group: "Costs", help: "Default 0.015 (Twilio + carrier fees)." },
   { key: "PUBLIC_URL", label: "Public app URL", secret: false, group: "General", help: "e.g. https://ultimatecapital.up.railway.app — used for signing links and webhooks." },

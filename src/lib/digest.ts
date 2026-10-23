@@ -27,6 +27,10 @@ export async function digestTick() {
     if (row && decrypt(row.value) === today) continue;
     await db.setting.upsert({ where: { workspaceId_key: { workspaceId: w.id, key: KEY } }, create: { workspaceId: w.id, key: KEY, value: encrypt(today) }, update: { value: encrypt(today) } });
     await sendDigest(w.id);
+    if ((await setting(w.id, "BANK_PROVIDER"))) {
+      const { createTask } = await import("./engine");
+      await createTask(w.id, { kind: "bank_sync", title: "Match bank deposits to fees", dedupeKey: `bank:${today}` });
+    }
     sent++;
   }
   return sent;

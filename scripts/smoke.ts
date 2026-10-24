@@ -97,6 +97,19 @@ async function main() {
   urls.push("/agents", "/agents?days=7", "/agents/team", "/closing/documents", "/closing/documents/new");
   for (const r of ["seller_acquisition", "property_discovery", "negotiation", "buyer_acquisition", "disposition", "receptionist", "transaction"]) urls.push(`/agents/${r}`, `/agents/${r}?outcome=positive&flagged=1`);
   for (const t of ["deals", "sellers", "properties", "buyers", "calls", "messages", "payments", "tasks", "title-companies", "audit"]) urls.push(`/api/export/${t}`);
+  urls.push("/settings/app");
+  {
+    // Push alert encryption + signing key round trip (no network).
+    const { vapid, encryptPayload } = await import("../src/lib/push");
+    const v = await vapid();
+    if (Buffer.from(v.publicKey, "base64url").length !== 65) fail("push key wrong length");
+    const { createECDH, randomBytes: rb } = await import("node:crypto");
+    const ua = createECDH("prime256v1");
+    ua.generateKeys();
+    const body = encryptPayload(ua.getPublicKey().toString("base64url"), rb(16).toString("base64url"), Buffer.from("{}"));
+    if (body.length !== 16 + 4 + 1 + 65 + 3 + 16) fail(`push payload size ${body.length}`);
+    console.log("push alerts ok");
+  }
   urls.push("/recommendations", "/recommendations?tab=hot", "/recommendations?tab=investors", "/recommendations?tab=learned", "/recommendations?mine=1");
   urls.push("/closing/title", "/closing/title/new", "/closing/title?cap=assignments&state=TX", "/closing/title/directory", "/closing/title/directory?state=GA", "/closing/title/directory?state=TX&q=title&county=Harris");
   for (const t of await db.titleCompany.findMany({ where: { workspaceId: ws } })) urls.push(`/closing/title/${t.id}`);
@@ -142,7 +155,7 @@ async function main() {
   writeFileSync("smoke-real-cookie.txt", realToken);
   writeFileSync("smoke-urls.txt", urls.join("\n") + "\n");
   const portal = await db.buyerInterest.findMany({ where: { portalToken: { not: null }, opportunity: { workspaceId: ws } }, take: 4, select: { portalToken: true } });
-  writeFileSync("smoke-public-urls.txt", [...portal.map((x) => `/d/${x.portalToken}`), "/d/not-a-real-token-xxxxxxx", "/a/expired-token-xxxxxxxx", `/sign/${signToken}`, "/sign/expired-token", ...offerTokens.flatMap((t) => [`/offer/${t}`, `/offer/${t}?preview=1`, `/api/offer/${t}/pdf`]), "/offer/not-a-real-offer-token", "/login", "/api/health"].join("\n") + "\n");
+  writeFileSync("smoke-public-urls.txt", [...portal.map((x) => `/d/${x.portalToken}`), "/d/not-a-real-token-xxxxxxx", "/a/expired-token-xxxxxxxx", `/sign/${signToken}`, "/sign/expired-token", ...offerTokens.flatMap((t) => [`/offer/${t}`, `/offer/${t}?preview=1`, `/api/offer/${t}/pdf`]), "/offer/not-a-real-offer-token", "/login", "/api/health", "/manifest.webmanifest", "/sw.js", "/offline.html", "/icon-192.png", "/apple-touch-icon.png"].join("\n") + "\n");
   console.log(`${urls.length} pages to crawl`);
   await db.$disconnect();
 }

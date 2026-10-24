@@ -42,6 +42,7 @@ export default async function SettingsHome() {
     ["Compliance", "DNC lists, suppressions, consent", "/settings/compliance"],
     ["Team & workspaces", `${members} members · invites · demo`, "/settings/team"],
     ["My profile", "Name, phone for calls, password", "/settings/profile"],
+    ["Phone app & alerts", "Install on your phone; alerts for approvals and hot deals", "/settings/app"],
   ];
   return (
     <div className="space-y-5">

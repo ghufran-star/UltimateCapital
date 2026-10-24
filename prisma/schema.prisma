@@ -954,3 +954,26 @@ model Recommendation {
   @@unique([workspaceId, key])
   @@index([workspaceId, opportunityId])
 }
+
+// Phone / desktop push alerts (installed app). One row per browser or phone that turned alerts on.
+model PushSubscription {
+  id        String    @id @default(cuid())
+  userId    String
+  endpoint  String    @unique
+  p256dh    String
+  auth      String
+  topics    String[]  @default(["approvals", "hot"]) // approvals | hot | money | all
+  device    String?
+  lastOkAt  DateTime?
+  failures  Int       @default(0)
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+}
+
+// App-wide secrets generated on first use (e.g. the push alert signing key).
+model AppSecret {
+  key       String   @id
+  value     String
+  createdAt DateTime @default(now())
+}

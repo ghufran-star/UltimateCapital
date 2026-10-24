@@ -29,4 +29,8 @@ export async function audit(
 
 export async function notify(workspaceId: string, title: string, body: string, href?: string, userId?: string) {
   await db.notification.create({ data: { workspaceId, title, body, href, userId } }).catch(() => null);
+  // Phone / desktop alerts for people who turned them on (never blocks the caller).
+  void import("./push")
+    .then((m) => m.pushNotification(workspaceId, { title, body, href, userId }))
+    .catch((e) => console.error("[push]", e instanceof Error ? e.message : e));
 }

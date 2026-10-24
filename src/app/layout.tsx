@@ -9,7 +9,7 @@ export const metadata: Metadata = {
   title: "UltimateCapital",
   description: "The operating system for an AI-run wholesaling business.",
   appleWebApp: { capable: true, title: "UltimateCapital", statusBarStyle: "default" },
-  icons: { icon: "/icon.svg", apple: "/icon.svg" },
+  icons: { icon: [{ url: "/icon.svg", type: "image/svg+xml" }, { url: "/icon-192.png", sizes: "192x192", type: "image/png" }], apple: "/apple-touch-icon.png" },
 };
 
 export const viewport: Viewport = { width: "device-width", initialScale: 1, viewportFit: "cover", themeColor: "#0f5d43" };

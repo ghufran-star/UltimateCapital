@@ -3,6 +3,7 @@ import { BellLink, Sidebar } from "@/components/nav";
 import { db } from "@/lib/db";
 import { pageCtx } from "@/lib/session";
 import { ActionButton } from "@/components/client";
+import { SwRegister } from "@/components/pwa";
 import { logoutAction, openDemoAction, switchWorkspaceAction } from "../actions/auth";
 
 export const dynamic = "force-dynamic";
@@ -18,6 +19,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   ]);
   return (
     <div>
+      <SwRegister />
       <Sidebar
         counts={{ approvals }}
         workspace={c.workspace}

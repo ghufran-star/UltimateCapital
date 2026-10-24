@@ -11,7 +11,7 @@ export default async function Alerts() {
   const list = await db.notification.findMany({ where: { workspaceId: c.workspace.id, OR: [{ userId: null }, { userId: c.user.id }] }, orderBy: { createdAt: "desc" }, take: 100 });
   return (
     <div>
-      <PageHeader title="Alerts" actions={<ActionButton action={markAlertsReadAction}>Mark all read</ActionButton>} />
+      <PageHeader title="Alerts" actions={<><a href="/settings/app" className="btn btn-ghost">Phone alerts</a><ActionButton action={markAlertsReadAction}>Mark all read</ActionButton></>} />
       <Card pad={false}>
         {list.length ? (
           <ul className="divide-y divide-line">

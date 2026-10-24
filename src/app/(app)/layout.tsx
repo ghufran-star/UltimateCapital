@@ -38,7 +38,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <div className="md:pl-64">
         {c.workspace.isDemo && (
           <div className="sticky top-0 z-20 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 bg-ink px-4 py-1.5 text-center text-xs text-bg">
-            <span>Test mode · sample data · calls, texts, email and AI are pretend</span>
+            <span>
+              Test mode<span className="hidden sm:inline"> · sample data · calls, texts, email and AI are pretend</span>
+              <span className="sm:hidden"> · everything is pretend</span>
+            </span>
             {c.role === "owner" && (
               <ActionButton action={openDemoAction} hidden={{ reset: "1" }} className="rounded-md bg-bg px-2 py-0.5 font-semibold text-ink" confirm="Start test mode again with fresh sample data?">
                 Reset

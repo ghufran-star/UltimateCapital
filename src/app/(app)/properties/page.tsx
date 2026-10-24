@@ -6,7 +6,7 @@ import type { Prisma } from "@prisma/client";
 import { RowLink } from "@/components/client";
 import { CallButton } from "@/components/phone";
 import { Combo } from "@/components/combo";
-import { Card, Empty, PageHeader, StatusBadge, Tabs } from "@/components/ui";
+import { Card, Empty, MoreMenu, PageHeader, StatusBadge, Tabs } from "@/components/ui";
 import { conditionShort, label as catLabel, LEAD_SOURCES, OCCUPANCY, OWNER_TYPES, PROPERTY_TYPES, SITUATIONS, shortType, US_STATES } from "@/lib/catalog";
 import { db } from "@/lib/db";
 import { pageCtx, propertyScope } from "@/lib/session";
@@ -75,36 +75,60 @@ export default async function Sellers({ searchParams }: { searchParams: Promise<
         title="Sellers"
         actions={
           <>
-            {(
-              <ActionButton action={checkNumbersAction} hidden={{ scope: "sellers" }} className="btn btn-ghost" confirm="Check every seller phone number (format and DNC-provider flags; plus a paid mobile/landline lookup if switched on in Settings)?">
-                Check numbers
-              </ActionButton>
-            )}
-            <a href={`/api/export/${tab}`} className="btn btn-ghost">
-              Export CSV
-            </a>
-            <Link href="/properties/find" className="btn btn-ghost">
-              Find sellers
-            </Link>
-            <Link href="/properties/import" className="btn btn-ghost">
-              Import CSV
-            </Link>
             <Link href="/deals/new" className="btn btn-primary">
-              + Add
+              + Add seller
             </Link>
+            <MoreMenu>
+              <Link href="/properties/find" className="btn btn-ghost">
+                Find sellers (data provider)
+              </Link>
+              <Link href="/properties/import" className="btn btn-ghost">
+                Import a list
+              </Link>
+              <ActionButton action={checkNumbersAction} hidden={{ scope: "sellers" }} className="btn btn-ghost" confirm="Check every seller phone number (format and Do Not Call flags; plus a paid mobile/landline lookup if switched on in Settings)?">
+                Check phone numbers
+              </ActionButton>
+              <a href={`/api/export/${tab}`} className="btn btn-ghost">
+                Download as spreadsheet
+              </a>
+            </MoreMenu>
           </>
         }
       />
       <Tabs active={tab} tabs={[{ key: "sellers", label: "Sellers", href: keep({ tab: "sellers" }), count: counts[0] }, { key: "properties", label: "Properties", href: keep({ tab: "properties" }), count: counts[1] }]} />
       <form className="mb-4 flex flex-wrap gap-2">
         <input type="hidden" name="tab" value={tab} />
-        <input name="q" defaultValue={q} placeholder={tab === "sellers" ? "Search name, phone, email" : "Search address, city, ZIP, county"} className="field max-w-xs" />
-        <Combo name="state" options={US_STATES} defaultValue={sp.state} emptyLabel="All states" placeholder="All states" className="w-48" />
-        <Combo name="type" options={PROPERTY_TYPES} defaultValue={sp.type} emptyLabel="All types" placeholder="All types" className="w-56" />
-        <Combo name="situation" options={SITUATIONS} defaultValue={sp.situation} emptyLabel="Any situation" placeholder="Any situation" className="w-56" />
+        <input name="q" defaultValue={q} placeholder={tab === "sellers" ? "Search name, phone, email" : "Search address, city, ZIP, county"} className="field w-full sm:max-w-xs" />
+        <Combo name="state" options={US_STATES} defaultValue={sp.state} emptyLabel="All states" placeholder="All states" className="min-w-0 flex-1 sm:w-48 sm:flex-none" />
+        <Combo name="type" options={PROPERTY_TYPES} defaultValue={sp.type} emptyLabel="All types" placeholder="All types" className="min-w-0 flex-1 sm:w-56 sm:flex-none" />
+        <Combo name="situation" options={SITUATIONS} defaultValue={sp.situation} emptyLabel="Any situation" placeholder="Any situation" className="w-full sm:w-56" />
         <button className="btn btn-ghost">Filter</button>
       </form>
-      <Card pad={false}>
+      {tab === "sellers" && sellers.length > 0 && (
+        <div className="space-y-2 md:hidden">
+          {sellers.slice(0, 200).map((s) => {
+            const p = s.ownerships[0]?.property;
+            const deal = p?.opportunities[0];
+            return (
+              <div key={s.id} className="card flex items-center gap-3 p-3">
+                <Link href={`/contacts/${s.id}`} className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="truncate font-semibold">{fullName(s) || "Unnamed"}</span>
+                    {deal ? <StatusBadge s={deal.stage} /> : null}
+                  </div>
+                  <div className="truncate text-xs text-muted">{p ? `${p.address}, ${p.city}` : s.phone || "no property yet"}</div>
+                  <div className="truncate text-xs text-muted">
+                    {s.lastContactAt ? `last contact ${ago(s.lastContactAt)}` : "not contacted yet"}
+                    {deal?.nextStep ? ` · ${deal.nextStep}` : ""}
+                  </div>
+                </Link>
+                {!s.doNotContact && <CallButton contactId={s.id} name={fullName(s) || "Seller"} phone={s.phone} opportunityId={deal?.id} size="sm" label="" />}
+              </div>
+            );
+          })}
+        </div>
+      )}
+      <Card pad={false} className={tab === "sellers" && sellers.length ? "hidden md:block" : ""}>
         {tab === "sellers" ? (
           sellers.length ? (
             <div className="overflow-x-auto">

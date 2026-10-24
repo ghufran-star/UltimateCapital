@@ -2,7 +2,7 @@ import Link from "next/link";
 import { cookies } from "next/headers";
 import { ActionButton, ActionForm, RowLink, Submit } from "@/components/client";
 import { Combo } from "@/components/combo";
-import { Card, Empty, HotBadge, PageHeader, StatusBadge, Tabs } from "@/components/ui";
+import { MobileCard, MoreMenu, Card, Empty, HotBadge, PageHeader, StatusBadge, Tabs } from "@/components/ui";
 import { US_STATES } from "@/lib/catalog";
 import { db } from "@/lib/db";
 import { DEAL_COLUMNS, DEFAULT_DEAL_COLUMNS, dealRow, type DealRow } from "@/lib/dealrows";
@@ -127,15 +127,17 @@ export default async function Deals({ searchParams }: { searchParams: Promise<SP
         sub={`${rows.length} deals${totals.withFee ? ` · projected fees ${usd(totals.fee)} across ${totals.withFee} priced deals` : ""}`}
         actions={
           <>
-            <a href={`/api/export/deals?${base}`} className="btn btn-ghost">
-              Export CSV
-            </a>
-            <Link href="/properties/import" className="btn btn-ghost">
-              Import list
-            </Link>
             <Link href="/deals/new" className="btn btn-primary">
               + Add deal
             </Link>
+            <MoreMenu>
+              <Link href="/properties/import" className="btn btn-ghost">
+                Import a list
+              </Link>
+              <a href={`/api/export/deals?${base}`} className="btn btn-ghost">
+                Download as spreadsheet
+              </a>
+            </MoreMenu>
           </>
         }
       />
@@ -143,11 +145,11 @@ export default async function Deals({ searchParams }: { searchParams: Promise<SP
       <div className="mb-4 flex flex-wrap items-start gap-2">
         <form className="flex flex-1 flex-wrap gap-2">
           <input type="hidden" name="view" value={view === "custom" ? "all" : view} />
-          <input name="q" defaultValue={q} placeholder="Search address, city or ZIP" className="field max-w-xs" />
-          <Combo name="state" options={US_STATES} defaultValue={sp.state} emptyLabel="All states" placeholder="All states" className="w-56" />
+          <input name="q" defaultValue={q} placeholder="Search address, city or ZIP" className="field min-w-0 flex-1 sm:max-w-xs" />
+          <Combo name="state" options={US_STATES} defaultValue={sp.state} emptyLabel="All states" placeholder="All states" className="w-full sm:w-56" />
           <button className="btn btn-ghost">Filter</button>
         </form>
-        <details className="relative">
+        <details className="relative hidden md:block">
           <summary className="btn btn-ghost cursor-pointer list-none">Columns ▾</summary>
           <form action={dealColumnsAction} className="absolute right-0 z-40 mt-1 w-72 space-y-1 rounded-xl border border-line bg-card p-3 shadow-lg">
             <input type="hidden" name="back" value={`/deals?${base}`} />
@@ -164,7 +166,7 @@ export default async function Deals({ searchParams }: { searchParams: Promise<SP
       </div>
 
       {writable && rows.length > 0 && (
-        <ActionForm action={bulkDealsAction} className="mb-3 flex flex-wrap items-center gap-2 rounded-xl bg-soft px-3 py-2 text-sm">
+        <ActionForm action={bulkDealsAction} className="mb-3 hidden flex-wrap items-center gap-2 rounded-xl bg-soft px-3 py-2 text-sm md:flex">
           <span className="font-medium">With ticked deals:</span>
           <select name="bulk" className="field w-auto" defaultValue="">
             <option value="" disabled>
@@ -189,7 +191,41 @@ export default async function Deals({ searchParams }: { searchParams: Promise<SP
         </ActionForm>
       )}
 
-      <Card pad={false}>
+      {rows.length > 0 && (
+        <div className="space-y-2 md:hidden">
+          {rows.slice(0, 200).map((r) => (
+            <MobileCard key={r.id} href={`/deals/${r.id}`}>
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="truncate font-semibold">{r.address}</div>
+                  <div className="truncate text-xs text-muted">
+                    {r.place} · {r.seller}
+                  </div>
+                </div>
+                <div className="flex shrink-0 flex-col items-end gap-1">
+                  <StatusBadge s={r.stage.toUpperCase().replace(/ /g, "_")} />
+                  {r.hot >= 50 && <HotBadge score={r.hot} />}
+                </div>
+              </div>
+              <div className="mt-2 grid grid-cols-3 gap-2 text-xs">
+                <div>
+                  <div className="text-muted">Most we&apos;ll pay</div>
+                  <div className="font-semibold tnum">{usd(r.maxBuy)}</div>
+                </div>
+                <div>
+                  <div className="text-muted">Seller wants</div>
+                  <div className="font-semibold tnum">{usd(r.lowest ?? r.asking)}</div>
+                </div>
+                <div>
+                  <div className="text-muted">Your profit</div>
+                  <div className="font-semibold tnum text-brand">{usd(r.fee)}</div>
+                </div>
+              </div>
+            </MobileCard>
+          ))}
+        </div>
+      )}
+      <Card pad={false} className={rows.length ? "hidden md:block" : ""}>
         {rows.length ? (
           <div className="overflow-x-auto">
             <table className="data">

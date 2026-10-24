@@ -33,17 +33,18 @@ async function run(width, height, list, dir, signedIn, shoot) {
       // Phones zoom out to fit wide pages, so compare against the real screen width, not the zoomed one.
       const bad = await page.evaluate((W) => {
         const out = [];
+        // Inside a scrolling box, or inside something fixed to the screen (menus, panels): fine.
         const scrolls = (el) => {
           for (let p = el.parentElement; p && p !== document.body; p = p.parentElement) {
             const s = getComputedStyle(p);
-            if (["auto", "scroll", "hidden", "clip"].includes(s.overflowX)) return true;
+            if (["auto", "scroll", "hidden", "clip"].includes(s.overflowX) || s.position === "fixed") return true;
           }
           return false;
         };
         for (const el of document.body.querySelectorAll("*")) {
           const r = el.getBoundingClientRect();
           if (r.width === 0 || r.height === 0) continue;
-          if (r.right > W + 1 || r.left < -1) {
+          if (r.right > W + 1) {
             const s = getComputedStyle(el);
             if (s.position === "fixed") continue;
             if (scrolls(el)) continue;

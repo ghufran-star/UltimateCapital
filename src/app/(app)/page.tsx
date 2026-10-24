@@ -199,11 +199,11 @@ export default async function Today() {
         </Card>
       )}
 
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+      <div className="grid grid-cols-4 gap-2 md:gap-3">
         <Stat label="Needs you" value={items.length} tone={items.length ? "warn" : undefined} />
-        <Stat label="Calls to make" value={callsToDo} href="/dialer" />
+        <Stat label="Calls" value={callsToDo} href="/dialer" />
         <Stat label="Under contract" value={(stageCount.UNDER_CONTRACT || 0) + (stageCount.DISPOSITION || 0) + (stageCount.CLOSING || 0)} href="/closing" />
-        <Stat label="Paid this month" value={usd(paidMonth._sum.amount || 0)} tone="good" href="/reports" />
+        <Stat label="Paid (month)" value={usd(paidMonth._sum.amount || 0)} tone="good" href="/reports" />
       </div>
 
       <section>
@@ -211,14 +211,16 @@ export default async function Today() {
         {items.length ? (
           <ul className="space-y-2">
             {items.map((i) => (
-              <li key={i.key} className="card p-4">
-                <div className="flex flex-wrap items-center gap-2 text-xs">
-                  <span className={`badge ${i.tone === "warn" ? "badge-warn" : i.tone === "good" ? "badge-good" : i.tone === "hot" ? "badge-hot" : ""}`}>{i.tag}</span>
-                  {i.when && <span className="text-muted">{i.when}</span>}
+              <li key={i.key} className="card flex flex-col gap-3 p-4 md:flex-row md:items-center md:justify-between">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2 text-xs">
+                    <span className={`badge ${i.tone === "warn" ? "badge-warn" : i.tone === "good" ? "badge-good" : i.tone === "hot" ? "badge-hot" : ""}`}>{i.tag}</span>
+                    {i.when && <span className="text-muted">{i.when}</span>}
+                  </div>
+                  <div className="mt-1.5 font-semibold">{i.title}</div>
+                  {i.why && <div className="mt-0.5 text-sm text-muted">{i.why}</div>}
                 </div>
-                <div className="mt-1.5 font-semibold">{i.title}</div>
-                {i.why && <div className="mt-0.5 text-sm text-muted">{i.why}</div>}
-                <div className="mt-3">{i.actions}</div>
+                <div className="shrink-0 md:max-w-md">{i.actions}</div>
               </li>
             ))}
           </ul>

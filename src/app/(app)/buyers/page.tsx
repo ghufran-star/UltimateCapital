@@ -3,7 +3,7 @@ import { STATUS_LABEL } from "@/lib/numbers";
 import { checkNumbersAction } from "../../actions/agents";
 import { ActionButton } from "@/components/client";
 import { RowLink } from "@/components/client";
-import { Card, Empty, PageHeader, StatusBadge } from "@/components/ui";
+import { MobileCard, MoreMenu, Card, Empty, PageHeader, StatusBadge } from "@/components/ui";
 import { db } from "@/lib/db";
 import { pageCtx } from "@/lib/session";
 import { ago, fmtDate, fullName, usd } from "@/lib/util";
@@ -30,32 +30,53 @@ export default async function Buyers({ searchParams }: { searchParams: Promise<{
         sub="Investors, their buy boxes, buying timeline and contact limits."
         actions={
           <>
-            <Link href="/buyers/find" className="btn btn-ghost">
-              Find cash buyers
-            </Link>
-            {(
-              <ActionButton action={checkNumbersAction} hidden={{ scope: "buyers" }} className="btn btn-ghost" confirm="Check every buyer phone number?">
-                Check numbers
-              </ActionButton>
-            )}
-            <a href="/api/export/buyers" className="btn btn-ghost">
-              Export CSV
-            </a>
-            <Link href="/buyers/import" className="btn btn-ghost">
-              Import CSV
-            </Link>
             <Link href="/buyers/new" className="btn btn-primary">
               + Add buyer
             </Link>
+            <MoreMenu>
+              <Link href="/buyers/find" className="btn btn-ghost">
+                Find cash buyers (data provider)
+              </Link>
+              <Link href="/buyers/import" className="btn btn-ghost">
+                Import a list
+              </Link>
+              <ActionButton action={checkNumbersAction} hidden={{ scope: "buyers" }} className="btn btn-ghost" confirm="Check every buyer phone number?">
+                Check phone numbers
+              </ActionButton>
+              <a href="/api/export/buyers" className="btn btn-ghost">
+                Download as spreadsheet
+              </a>
+            </MoreMenu>
           </>
         }
       />
-      <form className="mb-4 flex gap-2">
-        <input name="q" defaultValue={q} placeholder="Search name, company, phone" className="field max-w-sm" />
-        <input name="market" defaultValue={sp.market} placeholder="Market (city)" className="field max-w-40" />
+      <form className="mb-4 flex flex-wrap gap-2">
+        <input name="q" defaultValue={q} placeholder="Search name, company, phone" className="field min-w-0 flex-1 sm:max-w-sm" />
+        <input name="market" defaultValue={sp.market} placeholder="City" className="field w-32" />
         <button className="btn btn-ghost">Search</button>
       </form>
-      <Card pad={false}>
+      {buyers.length > 0 && (
+        <div className="space-y-2 md:hidden">
+          {buyers.slice(0, 200).map((b) => {
+            const bb = b.buyBoxes[0];
+            return (
+              <MobileCard key={b.id} href={`/contacts/${b.id}`}>
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="truncate font-semibold">{fullName(b)}</div>
+                    <div className="truncate text-xs text-muted">{bb ? `${[...bb.markets, ...bb.states].slice(0, 2).join(", ") || "Anywhere"} · up to ${usd(bb.maxPrice)}` : "No buy box yet"}</div>
+                  </div>
+                  {b.doNotContact ? <span className="badge badge-bad">DNC</span> : <StatusBadge s={b.buyerStatus} />}
+                </div>
+                <div className="mt-1 text-xs text-muted">
+                  {b.dealsClosed} closed · {b.fundsVerified ? "funds checked" : "funds not checked"} · {b.interests.filter((i) => i.serious).length} serious
+                </div>
+              </MobileCard>
+            );
+          })}
+        </div>
+      )}
+      <Card pad={false} className={buyers.length ? "hidden md:block" : ""}>
         {buyers.length ? (
           <div className="overflow-x-auto">
             <table className="data">

@@ -104,7 +104,7 @@ export default async function DealPage({ params, searchParams }: { params: Promi
                   </div>
                   <div className="text-sm">
                     {opp.approvedAt ? (
-                      <Notice tone="good">Final offer approved {ago(opp.approvedAt)} at {usd(opp.contractPrice)}. Prepare the contract on the Contracts tab.</Notice>
+                      <Notice tone="good">Final offer approved {ago(opp.approvedAt)} at {usd(opp.contractPrice)}. Send the contract from the Paperwork tab.</Notice>
                     ) : near ? (
                       <Notice tone="good">
                         Near agreement: the gap to the seller is within your rule ({usd(rp.approvals.nearAgreementGapAmt)} or {Math.round(rp.approvals.nearAgreementGapPct * 100)}%).{" "}
@@ -438,13 +438,13 @@ function L({ label: l, children }: { label: string; children: React.ReactNode })
 }
 
 const STEPS = [
-  { label: "New lead", stages: ["NEW", "ELIGIBLE", "OUTREACH"] },
-  { label: "Talking", stages: ["ENGAGED", "QUALIFIED", "PROPERTY_DISCOVERY"] },
-  { label: "Numbers", stages: ["UNDERWRITING", "OFFER_READY"] },
+  { label: "Lead", stages: ["NEW", "ELIGIBLE", "OUTREACH"] },
+  { label: "Talk", stages: ["ENGAGED", "QUALIFIED", "PROPERTY_DISCOVERY"] },
+  { label: "Value", stages: ["UNDERWRITING", "OFFER_READY"] },
   { label: "Offer", stages: ["NEGOTIATION"] },
-  { label: "Contract", stages: ["CONTRACT_PREPARATION", "UNDER_CONTRACT"] },
+  { label: "Signed", stages: ["CONTRACT_PREPARATION", "UNDER_CONTRACT"] },
   { label: "Buyer", stages: ["DISPOSITION"] },
-  { label: "Closing", stages: ["CLOSING"] },
+  { label: "Close", stages: ["CLOSING"] },
   { label: "Paid", stages: ["CLOSED"] },
 ];
 

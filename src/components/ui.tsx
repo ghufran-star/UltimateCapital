@@ -37,9 +37,9 @@ export function Card({ title, actions, children, className = "", pad = true }: {
 export function Stat({ label, value, sub, href, tone }: { label: string; value: React.ReactNode; sub?: React.ReactNode; href?: string; tone?: "good" | "warn" | "bad" | "hot" }) {
   const color = tone === "good" ? "text-brand" : tone === "warn" ? "text-warn" : tone === "bad" ? "text-bad" : tone === "hot" ? "text-hot" : "";
   const inner = (
-    <div className="card h-full p-4">
-      <div className="label">{label}</div>
-      <div className={`mt-1 text-2xl font-semibold tnum ${color}`}>{value}</div>
+    <div className="card h-full p-3 md:p-4">
+      <div className="label truncate text-[10px] md:text-xs">{label}</div>
+      <div className={`mt-1 truncate text-lg font-semibold tnum md:text-2xl ${color}`}>{value}</div>
       {sub && <div className="mt-0.5 text-xs text-muted">{sub}</div>}
     </div>
   );
@@ -114,4 +114,23 @@ export function Field({ label, children, hint }: { label: string; children: Reac
 export function Notice({ tone = "warn", children }: { tone?: "warn" | "bad" | "good" | "info"; children: React.ReactNode }) {
   const cls = tone === "bad" ? "bg-bad-soft text-bad" : tone === "good" ? "bg-brand-soft text-brand" : tone === "info" ? "bg-soft text-ink" : "bg-warn-soft text-warn";
   return <div className={`rounded-xl px-4 py-3 text-sm ${cls}`}>{children}</div>;
+}
+
+/** Extra page actions tucked into one "More" button (keeps headers to one main button). */
+export function MoreMenu({ children, label = "More" }: { children: React.ReactNode; label?: string }) {
+  return (
+    <details className="relative">
+      <summary className="btn btn-ghost cursor-pointer list-none [&::-webkit-details-marker]:hidden">{label} ▾</summary>
+      <div className="absolute right-0 z-40 mt-1 flex w-56 flex-col gap-1 rounded-xl border border-line bg-card p-1.5 shadow-lg [&>*]:w-full [&>*]:justify-start [&_.btn]:w-full [&_.btn]:justify-start [&_.btn]:border-0">{children}</div>
+    </details>
+  );
+}
+
+/** A list row on phones (tables show on bigger screens). */
+export function MobileCard({ href, children }: { href: string; children: React.ReactNode }) {
+  return (
+    <Link href={href} className="card block p-3 active:bg-soft">
+      {children}
+    </Link>
+  );
 }

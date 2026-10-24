@@ -225,6 +225,7 @@ export async function updateContactAction(_: ActionState, fd: FormData): Promise
         email: str(fd.get("email"))?.toLowerCase() || null,
         state: str(fd.get("state"))?.toUpperCase() || null,
         city: str(fd.get("city")),
+        ...(fd.has("mailingAddress") ? { mailingAddress: str(fd.get("mailingAddress")) } : {}),
         notes: str(fd.get("notes")),
         tags: list(fd.get("tags")),
         assigneeId: str(fd.get("assigneeId")),

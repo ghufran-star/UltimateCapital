@@ -336,11 +336,14 @@ export default async function ContactPage({ params, searchParams }: { params: Pr
               <F l="Email">
                 <input name="email" defaultValue={ct.email ?? ""} className="field" />
               </F>
+              <F l="Mailing address (where they live)">
+                <input name="mailingAddress" defaultValue={ct.mailingAddress ?? ""} className="field" />
+              </F>
               <div className="grid grid-cols-2 gap-2">
-                <F l="City">
+                <F l="City they live in">
                   <input name="city" defaultValue={ct.city ?? ""} className="field" />
                 </F>
-                <F l="State">
+                <F l="State they live in">
                   <Combo name="state" options={US_STATES} defaultValue={ct.state} emptyLabel="None" placeholder="State" />
                 </F>
               </div>

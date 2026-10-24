@@ -1,4 +1,6 @@
-# Next batch: restructure, rules, automation, cost, compliance controls (agreed 24 Oct 2026, waiting for "go")
+# Next batch: restructure, rules, automation, cost, compliance controls (agreed 24 Oct 2026)
+
+Status: Round 1 (stages 1–2 + fee received) done. Round 2 (stages 3 and 6: business rules, lists, compliance controls) done. Round 3 (stages 4–5: automation and AI savings) waiting for "go".
 
 ## Stage 1 — Fast, fits any screen, test mode
 1. Instant loading outlines; pages load only what's on screen; lighter deal and list pages; background work no longer slows screens.

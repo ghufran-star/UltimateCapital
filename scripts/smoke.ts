@@ -116,7 +116,7 @@ async function main() {
 
   // Offer letters: render, "send" (the demo blocks delivery), and the seller's ready / counter buttons.
   const { letterDefaults, sendOfferLetter, sellerReady, sellerCounter, offerByToken } = await import("../src/lib/offerletter");
-  const letterDeals = await db.opportunity.findMany({ where: { workspaceId: ws, sellerId: { not: null }, valuations: { some: { blocked: false } } }, take: 2 });
+  const letterDeals = await db.opportunity.findMany({ where: { workspaceId: ws, sellerId: { not: null }, valuations: { some: { blocked: null } } }, take: 2 });
   const offerTokens: string[] = [];
   for (const d of letterDeals) {
     const f = await letterDefaults(ws, d.id, undefined, { name: "Smoke Test", email: "smoke@example.com", phone: "+12105550100" });

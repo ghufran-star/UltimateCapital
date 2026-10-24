@@ -45,14 +45,14 @@ const MARKETS: Market[] = [
   { city: "Orlando", state: "FL", county: "Orange", zips: ["32805", "32808", "32811"], area: "407", alt: ["689"], arv: [240000, 390000], streets: ["Kirkman Rd", "Pine Hills Rd", "Westmoreland Dr", "Silver Star Rd"] },
   { city: "Atlanta", state: "GA", county: "Fulton", zips: ["30310", "30315", "30318", "30311"], area: "404", alt: ["470", "678"], arv: [200000, 380000], streets: ["Cascade Rd", "Pryor Rd", "Hollywood Rd", "Campbellton Rd"] },
   { city: "Columbus", state: "OH", county: "Franklin", zips: ["43205", "43207", "43211", "43204"], area: "614", alt: ["380"], arv: [135000, 250000], streets: ["Livingston Ave", "Parsons Ave", "Cleveland Ave", "Sullivant Ave"] },
-  { city: "Cleveland", state: "OH", county: "Cuyahoga", zips: ["44105", "44108", "44102"], area: "216", alt: ["440"], arv: [90000, 175000], streets: ["E 131st St", "Superior Ave", "Lorain Ave"] },
-  { city: "Memphis", state: "TN", county: "Shelby", zips: ["38109", "38106", "38127", "38118"], area: "901", alt: ["731"], arv: [110000, 210000], streets: ["Elvis Presley Blvd", "Lamar Ave", "Frayser Blvd", "Winchester Rd"] },
+  { city: "Cleveland", state: "OH", county: "Cuyahoga", zips: ["44105", "44108", "44102"], area: "216", alt: ["440"], arv: [125000, 210000], streets: ["E 131st St", "Superior Ave", "Lorain Ave"] },
+  { city: "Memphis", state: "TN", county: "Shelby", zips: ["38109", "38106", "38127", "38118"], area: "901", alt: ["731"], arv: [125000, 220000], streets: ["Elvis Presley Blvd", "Lamar Ave", "Frayser Blvd", "Winchester Rd"] },
   { city: "Nashville", state: "TN", county: "Davidson", zips: ["37207", "37208", "37013"], area: "615", alt: ["629"], arv: [280000, 450000], streets: ["Dickerson Pike", "Buchanan St", "Nolensville Pike"] },
   { city: "Indianapolis", state: "IN", county: "Marion", zips: ["46218", "46201", "46222", "46226"], area: "317", alt: ["463"], arv: [120000, 230000], streets: ["E 38th St", "Washington St", "Lafayette Rd", "Post Rd"] },
   { city: "Kansas City", state: "MO", county: "Jackson", zips: ["64130", "64128", "64127"], area: "816", alt: ["975"], arv: [120000, 220000], streets: ["Prospect Ave", "Troost Ave", "E 31st St"] },
-  { city: "St. Louis", state: "MO", county: "St. Louis City", zips: ["63115", "63136", "63120"], area: "314", alt: ["557"], arv: [95000, 190000], streets: ["Natural Bridge Ave", "W Florissant Ave", "Goodfellow Blvd"] },
-  { city: "Birmingham", state: "AL", county: "Jefferson", zips: ["35211", "35206", "35208"], area: "205", alt: ["659"], arv: [100000, 200000], streets: ["Bessemer Rd", "Center St", "Avenue F"] },
-  { city: "Detroit", state: "MI", county: "Wayne", zips: ["48205", "48219", "48227", "48228"], area: "313", alt: ["679"], arv: [80000, 170000], streets: ["Gratiot Ave", "Grand River Ave", "Schaefer Hwy", "Warren Ave"] },
+  { city: "St. Louis", state: "MO", county: "St. Louis City", zips: ["63115", "63136", "63120"], area: "314", alt: ["557"], arv: [125000, 210000], streets: ["Natural Bridge Ave", "W Florissant Ave", "Goodfellow Blvd"] },
+  { city: "Birmingham", state: "AL", county: "Jefferson", zips: ["35211", "35206", "35208"], area: "205", alt: ["659"], arv: [125000, 220000], streets: ["Bessemer Rd", "Center St", "Avenue F"] },
+  { city: "Detroit", state: "MI", county: "Wayne", zips: ["48205", "48219", "48227", "48228"], area: "313", alt: ["679"], arv: [120000, 200000], streets: ["Gratiot Ave", "Grand River Ave", "Schaefer Hwy", "Warren Ave"] },
   { city: "Philadelphia", state: "PA", county: "Philadelphia", zips: ["19132", "19133", "19140"], area: "215", alt: ["267", "445"], arv: [150000, 280000], streets: ["N Broad St", "Germantown Ave", "Lehigh Ave"] },
   { city: "Phoenix", state: "AZ", county: "Maricopa", zips: ["85009", "85017", "85035"], area: "602", alt: ["480"], arv: [260000, 420000], streets: ["W McDowell Rd", "N 43rd Ave", "W Indian School Rd"] },
   { city: "Charlotte", state: "NC", county: "Mecklenburg", zips: ["28208", "28216", "28205"], area: "704", alt: ["980"], arv: [220000, 360000], streets: ["Tuckaseegee Rd", "Beatties Ford Rd", "Central Ave"] },
@@ -623,6 +623,7 @@ async function seed(ws: string, ownerId: string) {
 
     // seller price story
     let sellerLowest: number | undefined;
+    if (calc && !(calc.maxBuy > 20000)) (calc = undefined), (contractPrice = undefined); // numbers don't work at this ARV: no price story
     if (calc && atLeast(sc.stage, "NEGOTIATION")) {
       sellerLowest =
         sc.tag === "near" || sc.tag === "near_hot" ? r100(calc.maxBuy * 1.03) : sc.tag === "far" ? r100(calc.maxBuy * 1.28) : sc.tag === "over_limit" ? r100(calc.maxBuy * 1.08) : contractPrice ?? r100(calc.maxBuy * 1.12);

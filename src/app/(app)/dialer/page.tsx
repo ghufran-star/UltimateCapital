@@ -1,3 +1,5 @@
+import { SectionTabs } from "@/components/sections";
+import { CallButton } from "@/components/phone";
 import Link from "next/link";
 import { label as catLabel, shortType, SITUATIONS } from "@/lib/catalog";
 import { ActionButton, ActionForm, Submit } from "@/components/client";
@@ -40,9 +42,10 @@ export default async function Dialer({ searchParams }: { searchParams: Promise<{
             <div className="space-y-4">
               <div className="flex flex-wrap items-center gap-3">
                 <span className="text-2xl font-semibold tnum">{ct.phone}</span>
+                {writable && <CallButton contactId={ct.id} name={fullName(ct) || "Contact"} phone={ct.phone} opportunityId={opp?.id} memberId={lead.id} campaignId={camp.id} label="Call now" />}
                 {writable && (
-                  <ActionButton action={dialerCallAction} hidden={{ memberId: lead.id }} className="btn btn-primary">
-                    📞 Call now
+                  <ActionButton action={dialerCallAction} hidden={{ memberId: lead.id }} className="btn btn-ghost btn-sm">
+                    Ring my phone instead
                   </ActionButton>
                 )}
                 <span className="text-sm text-muted">Attempt {lead.attempts + 1}</span>
@@ -100,7 +103,7 @@ export default async function Dialer({ searchParams }: { searchParams: Promise<{
             </Card>
           )}
         </div>
-        <Card title="Outcome">
+        <Card title="Called another way? Record what happened">
           {writable ? (
             <ActionForm action={dialerOutcomeAction}>
               <input type="hidden" name="memberId" value={lead.id} />
@@ -137,7 +140,10 @@ export default async function Dialer({ searchParams }: { searchParams: Promise<{
 
   return (
     <div className="space-y-5">
-      <PageHeader title="Power dialer" sub="One contact at a time, checked against DNC, hours and opt-outs before you see it. We ring your phone, then connect them." />
+      <PageHeader title="Calls" sub="Your call list for today, and the dialer: one person at a time, checked against Do Not Call, calling hours and opt-outs before you see them." />
+      <SectionTabs set="calls" active="/dialer" />
+      <CallList ws={ws} userId={c.user.id} />
+      <h2 className="text-sm font-semibold uppercase tracking-wide text-muted">Dialer (team-calling campaigns)</h2>
       {camps.length ? (
         <div className="flex flex-wrap items-center gap-2">
           {camps.map((x) => (
@@ -156,7 +162,6 @@ export default async function Dialer({ searchParams }: { searchParams: Promise<{
           </Empty>
         </Card>
       )}
-      {!c.user.phone && camps.length > 0 && <Notice>Add your mobile in Settings → My profile so the dialer can ring you.</Notice>}
       {camp && !lead && (
         <Card>
           <Empty title={due ? `${due} contacts ready` : "Nobody due right now"} action={writable && due ? <ActionButton action={dialerNextAction} hidden={{ campaignId: camp.id }} className="btn btn-primary">Start dialing</ActionButton> : undefined}>
@@ -166,5 +171,45 @@ export default async function Dialer({ searchParams }: { searchParams: Promise<{
       )}
       {details}
     </div>
+  );
+}
+
+/** Today's calls: callbacks and follow-ups due for the team, most urgent first, each one tap away. */
+async function CallList({ ws, userId }: { ws: string; userId: string }) {
+  const end = new Date();
+  end.setHours(23, 59, 59, 999);
+  const tasks = await db.task.findMany({
+    where: { workspaceId: ws, status: "open", dueAt: { lte: end }, contactId: { not: null }, OR: [{ kind: "follow_up", OR: [{ assignee: null }, { assignee: userId }, { assignee: { not: { startsWith: "agent:" } } }] }, { kind: "call", assignee: { not: null }, NOT: { assignee: { startsWith: "agent:" } } }] },
+    orderBy: [{ priority: "asc" }, { dueAt: "asc" }],
+    take: 30,
+  });
+  const people = await db.contact.findMany({ where: { id: { in: tasks.map((t) => t.contactId!) } }, select: { id: true, firstName: true, lastName: true, company: true, phone: true, doNotContact: true, kind: true } });
+  const list = tasks.filter((t) => people.some((p) => p.id === t.contactId && p.phone && !p.doNotContact));
+  return (
+    <Card title={`Your call list today · ${list.length}`} pad={false}>
+      {list.length ? (
+        <ul className="divide-y divide-line">
+          {list.map((t) => {
+            const p = people.find((x) => x.id === t.contactId)!;
+            return (
+              <li key={t.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+                <div className="min-w-0">
+                  <Link href={`/contacts/${p.id}`} className="font-medium hover:text-brand">
+                    {fullName(p) || "Unnamed"}
+                  </Link>
+                  <div className="text-xs text-muted">
+                    {t.title}
+                    {t.priority === 1 ? " · urgent" : ""} · {t.dueAt < new Date() ? "overdue" : fmtDate(t.dueAt, true)}
+                  </div>
+                </div>
+                <CallButton contactId={p.id} name={fullName(p) || "Contact"} phone={p.phone} opportunityId={t.entityType === "opportunity" ? t.entityId || undefined : undefined} />
+              </li>
+            );
+          })}
+        </ul>
+      ) : (
+        <p className="px-4 py-6 text-center text-sm text-muted">No calls due today. Callbacks and follow-ups land here automatically.</p>
+      )}
+    </Card>
   );
 }

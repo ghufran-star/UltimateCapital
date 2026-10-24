@@ -10,7 +10,6 @@ type PdfPage = { getViewport: (o: { scale: number }) => { width: number; height:
 
 const PDFJS = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
 const WORKER = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
-const SCALE = 1.4;
 const SIZES: Record<Placement["kind"], [number, number]> = { field: [170, 16], sign: [170, 40], initial: [50, 24], date_signed: [90, 16] };
 
 function loadPdfJs(): Promise<PdfJs> {
@@ -32,33 +31,40 @@ function loadPdfJs(): Promise<PdfJs> {
 /** Click on the page to place a field or signature box; click a box to remove it. */
 export function PlacementEditor({ templateId, initial, fields, roles, action }: { templateId: string; initial: Placement[]; fields: string[]; roles: string[]; action: (p: ActionState, f: FormData) => Promise<ActionState> }) {
   const [items, setItems] = useState<Placement[]>(initial);
+  // Page sizes in PDF points; the page is drawn to fit the width of the screen.
   const [pages, setPages] = useState<{ w: number; h: number }[]>([]);
+  const [scale, setScale] = useState(1);
   const [tool, setTool] = useState<{ kind: Placement["kind"]; key: string; role: string }>({ kind: "sign", key: fields[0] || "", role: roles[0] || "seller" });
   const [err, setErr] = useState("");
   const holder = useRef<HTMLDivElement>(null);
+  const doc = useRef<PdfDoc | null>(null);
+
+  // Fit-to-width: recompute when the screen size changes.
+  useEffect(() => {
+    const fit = () => {
+      if (!holder.current || !pages.length) return;
+      const avail = holder.current.clientWidth;
+      const widest = Math.max(...pages.map((p) => p.w));
+      setScale(Math.min(1.6, Math.max(0.3, avail / widest)));
+    };
+    fit();
+    window.addEventListener("resize", fit);
+    return () => window.removeEventListener("resize", fit);
+  }, [pages]);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
         const lib = await loadPdfJs();
-        const doc = await lib.getDocument(`/api/templates/${templateId}/pdf`).promise;
+        const d = await lib.getDocument(`/api/templates/${templateId}/pdf`).promise;
+        doc.current = d;
         const out: { w: number; h: number }[] = [];
-        for (let i = 1; i <= doc.numPages; i++) {
-          const page = await doc.getPage(i);
-          const vp = page.getViewport({ scale: SCALE });
-          const canvas = holder.current?.querySelector<HTMLCanvasElement>(`canvas[data-page="${i - 1}"]`) || null;
+        for (let i = 1; i <= d.numPages; i++) {
+          const vp = (await d.getPage(i)).getViewport({ scale: 1 });
           out.push({ w: vp.width, h: vp.height });
-          if (cancelled) return;
-          setPages([...out]);
-          await new Promise((r) => setTimeout(r, 0));
-          const cv = canvas || holder.current?.querySelector<HTMLCanvasElement>(`canvas[data-page="${i - 1}"]`);
-          if (cv) {
-            cv.width = vp.width;
-            cv.height = vp.height;
-            await page.render({ canvasContext: cv.getContext("2d")!, viewport: vp }).promise;
-          }
         }
+        if (!cancelled) setPages(out);
       } catch (e) {
         setErr(e instanceof Error ? e.message : String(e));
       }
@@ -68,14 +74,37 @@ export function PlacementEditor({ templateId, initial, fields, roles, action }: 
     };
   }, [templateId]);
 
+  // Draw each page sharply at the current size.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const d = doc.current;
+      if (!d || !pages.length) return;
+      const dpr = Math.min(2, window.devicePixelRatio || 1);
+      for (let i = 1; i <= d.numPages; i++) {
+        if (cancelled) return;
+        const page = await d.getPage(i);
+        const vp = page.getViewport({ scale: scale * dpr });
+        const cv = holder.current?.querySelector<HTMLCanvasElement>(`canvas[data-page="${i - 1}"]`);
+        if (!cv) continue;
+        cv.width = vp.width;
+        cv.height = vp.height;
+        await page.render({ canvasContext: cv.getContext("2d")!, viewport: vp }).promise;
+      }
+    })().catch((e) => setErr(e instanceof Error ? e.message : String(e)));
+    return () => {
+      cancelled = true;
+    };
+  }, [pages, scale]);
+
   const place = (pageIdx: number, e: React.MouseEvent<HTMLDivElement>) => {
     if ((e.target as HTMLElement).dataset.box) return;
     const r = e.currentTarget.getBoundingClientRect();
     const [w, h] = SIZES[tool.kind];
-    const px = (e.clientX - r.left) / SCALE;
-    const pyTop = (e.clientY - r.top) / SCALE;
-    const pageH = pages[pageIdx].h / SCALE;
-    setItems((xs) => [...xs, { id: Math.random().toString(36).slice(2, 9), page: pageIdx, x: Math.round(px), y: Math.round(pageH - pyTop - h), w, h, kind: tool.kind, ...(tool.kind === "field" ? { key: tool.key } : { role: tool.role }) }]);
+    const px = (e.clientX - r.left) / scale;
+    const pyTop = (e.clientY - r.top) / scale;
+    const pageH = pages[pageIdx].h;
+    setItems((xs) => [...xs, { id: Math.random().toString(36).slice(2, 9), page: pageIdx, x: Math.round(Math.min(px, pages[pageIdx].w - w)), y: Math.round(Math.max(0, pageH - pyTop - h)), w, h, kind: tool.kind, ...(tool.kind === "field" ? { key: tool.key } : { role: tool.role }) }]);
   };
 
   const labelOf = (p: Placement) => (p.kind === "field" ? `{{${p.key}}}` : `${p.kind === "sign" ? "Signature" : p.kind === "initial" ? "Initials" : "Date signed"}: ${p.role}`);
@@ -106,7 +135,7 @@ export function PlacementEditor({ templateId, initial, fields, roles, action }: 
             ))}
           </select>
         )}
-        <span className="text-xs text-muted">Click the page to place · click a box to remove · {items.length} placed</span>
+        <span className="text-xs text-muted">Tap the page to place a box · tap a box to remove it · {items.length} placed</span>
         <ActionForm action={action} className="ml-auto flex items-center gap-2">
           <input type="hidden" name="templateId" value={templateId} />
           <input type="hidden" name="placements" value={JSON.stringify(items)} />
@@ -114,10 +143,10 @@ export function PlacementEditor({ templateId, initial, fields, roles, action }: 
         </ActionForm>
       </div>
       {err && <p className="text-sm text-bad">{err}</p>}
-      <div ref={holder} className="space-y-4 overflow-x-auto">
+      <div ref={holder} className="w-full space-y-4">
         {pages.map((pg, i) => (
-          <div key={i} className="relative mx-auto shadow" style={{ width: pg.w, height: pg.h }} onClick={(e) => place(i, e)}>
-            <canvas data-page={i} className="absolute inset-0" />
+          <div key={i} className="relative mx-auto bg-white shadow" style={{ width: pg.w * scale, height: pg.h * scale }} onClick={(e) => place(i, e)}>
+            <canvas data-page={i} className="absolute inset-0 h-full w-full" />
             {items
               .filter((p) => p.page === i)
               .map((p) => (
@@ -130,7 +159,7 @@ export function PlacementEditor({ templateId, initial, fields, roles, action }: 
                     setItems((xs) => xs.filter((x) => x.id !== p.id));
                   }}
                   className={`absolute flex cursor-pointer items-center overflow-hidden rounded border-2 px-1 text-[10px] font-semibold ${p.kind === "field" ? "border-sky-500 bg-sky-500/15 text-sky-800" : "border-amber-500 bg-amber-400/20 text-amber-800"}`}
-                  style={{ left: p.x * SCALE, top: pg.h - (p.y + p.h) * SCALE, width: p.w * SCALE, height: p.h * SCALE }}
+                  style={{ left: p.x * scale, top: (pg.h - (p.y + p.h)) * scale, width: p.w * scale, height: p.h * scale, fontSize: Math.max(8, 10 * Math.min(1, scale)) }}
                 >
                   {labelOf(p)}
                 </div>

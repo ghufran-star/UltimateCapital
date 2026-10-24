@@ -20,7 +20,7 @@ export default async function AutopilotPage() {
           </label>
         </Card>
         <Card title="Next steps by stage" pad={false}>
-          <table className="data">
+          <div className="overflow-x-auto"><table className="data">
             <thead>
               <tr>
                 <th>On</th>
@@ -48,7 +48,7 @@ export default async function AutopilotPage() {
                 </tr>
               ))}
             </tbody>
-          </table>
+          </table></div>
           <p className="px-4 py-3 text-xs text-muted">If the AI isn&apos;t allowed to call someone (for example no AI-voice consent in that state), the step becomes a task for the assigned person instead.</p>
         </Card>
         <Card title="Flag stuck deals after (days)">

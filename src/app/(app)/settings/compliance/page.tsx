@@ -64,7 +64,7 @@ export default async function Compliance({ searchParams }: { searchParams: Promi
       </Card>
       <Card title="Recent live checks" pad={false}>
         {checks.length ? (
-          <table className="data">
+          <div className="overflow-x-auto"><table className="data">
             <tbody>
               {checks.map((k) => (
                 <tr key={k.id}>
@@ -78,7 +78,7 @@ export default async function Compliance({ searchParams }: { searchParams: Promi
                 </tr>
               ))}
             </tbody>
-          </table>
+          </table></div>
         ) : (
           <p className="p-4 text-sm text-muted">No checks yet.</p>
         )}

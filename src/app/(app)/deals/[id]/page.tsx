@@ -17,11 +17,13 @@ import { activeRuleSet } from "@/lib/valuation";
 import { verificationPackAction } from "../../../actions/ops";
 import { makeOfferAction } from "../../../actions/deals";
 import { callContactAction, recordOfferAction, textContactAction, updateDealAction } from "../../../actions/records";
-import { dealInclude } from "./include";
+import { dealInclude, type Deal } from "./include";
 import { FilesPanel } from "@/components/files";
 import { photoRepairsAction } from "../../../actions/files";
 import { buyerLadder, contractBasis } from "@/lib/deals";
 import { ActivityTab, BuyersTab, ClosingTab, ContractsTab, NumbersTab } from "./sections";
+import { CallButton } from "@/components/phone";
+import { FeeReceived } from "@/components/fee";
 
 export default async function DealPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ tab?: string; ch?: string; lim?: string }> }) {
   const c = await pageCtx();
@@ -52,13 +54,13 @@ export default async function DealPage({ params, searchParams }: { params: Promi
   const counts = { buyers: opp.interests.length, contracts: opp.contracts.length };
 
   const tabs = [
-    { key: "overview", label: "Overview" },
+    { key: "overview", label: "Summary" },
     { key: "numbers", label: "Numbers" },
-    { key: "buyers", label: "Buyers", count: counts.buyers },
-    { key: "contracts", label: "Contracts", count: counts.contracts },
+    { key: "buyers", label: "Investors", count: counts.buyers },
+    { key: "contracts", label: "Paperwork", count: counts.contracts },
     { key: "closing", label: "Closing" },
-    { key: "files", label: "Photos & files", count: photos.length },
-    { key: "activity", label: "Activity" },
+    { key: "files", label: "Photos", count: photos.length },
+    { key: "activity", label: "History" },
   ].map((t) => ({ ...t, href: `/deals/${opp.id}?tab=${t.key}` }));
 
   return (
@@ -77,28 +79,27 @@ export default async function DealPage({ params, searchParams }: { params: Promi
           </span>
         }
       />
-      {pendingApprovals.length > 0 && (
-        <div className="mb-4">
-          <Notice>
-            {pendingApprovals.length} decision{pendingApprovals.length > 1 ? "s" : ""} waiting: {pendingApprovals.map((a) => a.title).join(" · ")}.{" "}
-            <Link href="/approvals" className="font-semibold underline">
-              Decide
-            </Link>
-          </Notice>
-        </div>
-      )}
+      <Progress stage={opp.stage} paid={Boolean(opp.transaction?.paidAt)} />
+      <NextStep
+        opp={opp}
+        seller={seller}
+        hasNumbers={Boolean(calc)}
+        blocked={v?.blocked || null}
+        approvals={pendingApprovals.map((a) => ({ id: a.id, title: a.title }))}
+        canAct={writable}
+      />
       <Tabs active={tab} tabs={tabs} />
 
       {tab === "overview" && (
         <div className="grid gap-5 lg:grid-cols-3">
           <div className="space-y-5 lg:col-span-2">
-            <Card title="Negotiation">
+            <Card title="Offers">
               {calc ? (
                 <div className="space-y-4">
                   <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-                    <Mini label="1st offer" value={usd(calc.sellerOffers[0])} />
-                    <Mini label="2nd offer" value={usd(calc.sellerOffers[1] ?? calc.maxBuy)} />
-                    <Mini label="Max buy (locked)" value={usd(calc.maxBuy)} strong />
+                    <Mini label="First offer" value={usd(calc.sellerOffers[0])} />
+                    <Mini label="Second offer" value={usd(calc.sellerOffers[1] ?? calc.maxBuy)} />
+                    <Mini label="Most we'll pay" value={usd(calc.maxBuy)} strong />
                     <Mini label="Seller's lowest" value={usd(opp.sellerLowest)} tone={near ? "good" : undefined} />
                   </div>
                   <div className="text-sm">
@@ -337,9 +338,7 @@ export default async function DealPage({ params, searchParams }: { params: Promi
                   )}
                   {writable && !seller.doNotContact && (
                     <div className="flex flex-wrap gap-2">
-                      <ActionButton action={callContactAction} hidden={{ contactId: seller.id, mode: "me", opportunityId: opp.id }} className="btn btn-primary btn-sm">
-                        📞 Call (me)
-                      </ActionButton>
+                      <CallButton contactId={seller.id} name={fullName(seller)} phone={seller.phone} opportunityId={opp.id} label="Call" />
                     </div>
                   )}
                   {writable && !seller.doNotContact && (
@@ -353,7 +352,7 @@ export default async function DealPage({ params, searchParams }: { params: Promi
                         <option value="negotiation">Negotiation agent</option>
                         <option value="transaction">Transaction Coordinator agent</option>
                       </select>
-                      <Submit className="btn btn-ghost btn-sm">🤖 AI call</Submit>
+                      <Submit className="btn btn-ghost btn-sm">Have the AI call</Submit>
                     </ActionForm>
                   )}
                   {writable && !seller.doNotContact && (
@@ -435,5 +434,68 @@ function L({ label: l, children }: { label: string; children: React.ReactNode })
       <span className="text-sm font-medium">{l}</span>
       {children}
     </label>
+  );
+}
+
+const STEPS = [
+  { label: "New lead", stages: ["NEW", "ELIGIBLE", "OUTREACH"] },
+  { label: "Talking", stages: ["ENGAGED", "QUALIFIED", "PROPERTY_DISCOVERY"] },
+  { label: "Numbers", stages: ["UNDERWRITING", "OFFER_READY"] },
+  { label: "Offer", stages: ["NEGOTIATION"] },
+  { label: "Contract", stages: ["CONTRACT_PREPARATION", "UNDER_CONTRACT"] },
+  { label: "Buyer", stages: ["DISPOSITION"] },
+  { label: "Closing", stages: ["CLOSING"] },
+  { label: "Paid", stages: ["CLOSED"] },
+];
+
+/** Where the deal is, as a simple row of steps. */
+function Progress({ stage, paid }: { stage: string; paid: boolean }) {
+  const at = Math.max(0, STEPS.findIndex((s) => s.stages.includes(stage)));
+  return (
+    <ol className="mb-4 flex gap-1" aria-label="Deal progress">
+      {STEPS.map((s, i) => {
+        const done = i < at || (i === at && stage === "CLOSED" && paid);
+        const now = i === at && !done;
+        return (
+          <li key={s.label} className="min-w-0 flex-1">
+            <div className={`h-1.5 rounded-full ${done ? "bg-brand" : now ? "bg-brand/60" : "bg-soft"}`} />
+            <div className={`mt-1 truncate text-[10px] sm:text-xs ${now ? "font-semibold text-ink" : done ? "text-brand" : "text-muted"}`}>{s.label}</div>
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
+type NS = { title: string; why: string; action?: React.ReactNode };
+
+/** The one thing to do next on this deal, with the button that does it. */
+function NextStep({ opp, seller, hasNumbers, blocked, approvals, canAct }: { opp: Deal; seller: { id: string; firstName: string; lastName: string; company: string | null; phone: string | null; doNotContact: boolean } | null; hasNumbers: boolean; blocked: string | null; approvals: { id: string; title: string }[]; canAct: boolean }) {
+  const call = (label: string) => (seller && !seller.doNotContact ? <CallButton contactId={seller.id} name={fullName(seller)} phone={seller.phone} opportunityId={opp.id} label={label} size="lg" /> : null);
+  const go = (href: string, label: string) => (
+    <Link href={href} className="btn btn-primary w-full py-3 text-base">
+      {label}
+    </Link>
+  );
+  const s = opp.stage;
+  let n: NS;
+  if (approvals.length) n = { title: "A decision is waiting for you", why: approvals.map((a) => a.title).join(" · "), action: go(`/approvals#${approvals[0].id}`, "Decide now") };
+  else if (["DECLINED", "WITHDRAWN"].includes(opp.exception || "")) n = { title: "The seller said no for now", why: opp.nextStep || "Check in again in a few months; situations change.", action: call("Check in with the seller") };
+  else if (["NEW", "ELIGIBLE", "OUTREACH"].includes(s)) n = { title: "Talk to the seller", why: "Find out if they'd sell, when, and the price they have in mind. Don't make an offer on this first call.", action: call("Call the seller") };
+  else if (["ENGAGED", "QUALIFIED", "PROPERTY_DISCOVERY"].includes(s)) n = hasNumbers ? { title: "Make your offer", why: "You have the numbers. Send a written offer or call with it.", action: go(`/deals/${opp.id}?tab=overview#make-offer`, "Send the offer") } : { title: "Learn the condition, then work out the numbers", why: "Ask about the roof, kitchen, bathrooms, heating and anything broken. Then value it.", action: go(`/deals/${opp.id}?tab=numbers`, "Work out the numbers") };
+  else if (s === "UNDERWRITING") n = blocked ? { title: "Some numbers are missing", why: blocked, action: go(`/deals/${opp.id}?tab=numbers`, "Fill in the numbers") } : { title: "Check the numbers", why: "Look over the value and repairs, then make your offer.", action: go(`/deals/${opp.id}?tab=numbers`, "See the numbers") };
+  else if (s === "OFFER_READY") n = { title: "Send your offer", why: "The numbers are ready. Send it in writing or call the seller with it.", action: go(`/deals/${opp.id}?tab=overview#make-offer`, "Send the offer") };
+  else if (s === "NEGOTIATION") n = { title: "Follow up on your offer", why: opp.nextStep || "Call the seller, or send an updated written offer.", action: call("Call the seller") };
+  else if (s === "CONTRACT_PREPARATION") n = { title: "Send the purchase contract", why: `Agreed at ${usd(opp.contractPrice)}. Send the contract for the seller to sign.`, action: go(`/deals/${opp.id}?tab=contracts`, "Send the contract") };
+  else if (s === "UNDER_CONTRACT" || s === "DISPOSITION") n = { title: "Find your buyer", why: "Pitch the deal to the investors that fit it best.", action: go(`/deals/${opp.id}?tab=buyers`, "Pitch to investors") };
+  else if (s === "CLOSING") n = opp.transaction?.paidAt ? { title: "Paid", why: "This deal is done." } : { title: "Closing: did your fee arrive?", why: "When the money is in your account, mark it here and everything updates.", action: canAct ? <FeeReceived opportunityId={opp.id} expected={opp.transaction?.assignmentFee} /> : null };
+  else n = { title: opp.transaction?.paidAt ? `Paid ${usd(opp.transaction.netProceeds)}` : "Closed", why: opp.transaction?.paidAt ? `Fee received ${fmtDate(opp.transaction.paidAt)}.` : "Mark your fee received when it arrives.", action: !opp.transaction?.paidAt && canAct ? <FeeReceived opportunityId={opp.id} expected={opp.transaction?.assignmentFee} /> : undefined };
+  return (
+    <div className="card mb-4 border-brand/40 p-4">
+      <div className="label">Next step</div>
+      <div className="mt-1 text-lg font-semibold">{n.title}</div>
+      <p className="mt-0.5 text-sm text-muted">{n.why}</p>
+      {canAct && n.action && <div className="mt-3 sm:max-w-sm">{n.action}</div>}
+    </div>
   );
 }

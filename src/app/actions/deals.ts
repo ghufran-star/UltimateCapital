@@ -230,3 +230,16 @@ export async function assignTaskAction(_: ActionState, fd: FormData): Promise<Ac
     return { ok: true, message: "Reassigned" };
   });
 }
+
+/** "Fee received": the amount and date; the deal closes and every report updates. */
+export async function feeReceivedAction(_: ActionState, fd: FormData): Promise<ActionState> {
+  return act(async () => {
+    const c = await requireCtx("closing", { write: true });
+    const id = String(fd.get("opportunityId"));
+    await assertDeal(c, id);
+    const amount = Math.round(Number(String(fd.get("amount") || "").replace(/[$,\s]/g, "")));
+    const d = str(fd.get("date"));
+    const { markFeeReceived } = await import("@/lib/fees");
+    return { ok: true, message: await markFeeReceived(c.workspace.id, id, amount, d ? new Date(`${d}T12:00:00`) : new Date(), c.user.id) };
+  });
+}

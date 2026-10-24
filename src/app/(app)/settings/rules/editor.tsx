@@ -311,7 +311,7 @@ export function RulesEditor({ initial, version, action, readOnly, states }: { in
 
         {tab === "playbook" && (
           <section className="card overflow-x-auto p-0">
-            <table className="data">
+            <div className="overflow-x-auto"><table className="data">
               <thead>
                 <tr>
                   <th>Item</th>
@@ -352,7 +352,7 @@ export function RulesEditor({ initial, version, action, readOnly, states }: { in
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </table></div>
             <div className="p-3">
               <button type="button" className="btn btn-ghost btn-sm" onClick={() => setRules({ ...rules, playbook: [...rules.playbook, { key: `item_${Date.now().toString(36)}`, label: "New item", unit: "fixed", costs: { cosmetic: 0, moderate: 0, heavy: 0, gut: 0 } }] })}>
                 + Add item

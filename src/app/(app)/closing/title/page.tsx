@@ -1,3 +1,4 @@
+import { SectionTabs } from "@/components/sections";
 import Link from "next/link";
 import type { Prisma } from "@prisma/client";
 import { RowLink } from "@/components/client";
@@ -51,6 +52,7 @@ export default async function TitleCompanies({ searchParams }: { searchParams: P
           </>
         }
       />
+      <SectionTabs set="closing" active="/closing/title" />
       <form className="mb-4 flex flex-wrap gap-2">
         <input name="q" defaultValue={sp.q} placeholder="Search name" className="field max-w-xs" />
         <Combo name="state" options={US_STATES} defaultValue={sp.state} emptyLabel="All states" placeholder="All states" className="w-48" />

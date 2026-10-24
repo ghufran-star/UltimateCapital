@@ -167,7 +167,7 @@ export default async function Reports({ searchParams }: { searchParams: Promise<
 
       <div className="grid gap-5 lg:grid-cols-2">
         <Card title="AI agents" pad={false}>
-          <table className="data">
+          <div className="overflow-x-auto"><table className="data">
             <thead>
               <tr>
                 <th>Agent</th>
@@ -197,10 +197,10 @@ export default async function Reports({ searchParams }: { searchParams: Promise<
                 <td className="text-right">—</td>
               </tr>
             </tbody>
-          </table>
+          </table></div>
         </Card>
         <Card title={`Buyers · ${interests.length} deals sent · ${pct(replied, interests.length)} replied`} pad={false}>
-          <table className="data">
+          <div className="overflow-x-auto"><table className="data">
             <thead>
               <tr>
                 <th>Buyer</th>
@@ -223,7 +223,7 @@ export default async function Reports({ searchParams }: { searchParams: Promise<
                 </tr>
               ))}
             </tbody>
-          </table>
+          </table></div>
         </Card>
       </div>
     </div>

@@ -1,3 +1,4 @@
+import { SectionTabs } from "@/components/sections";
 import Link from "next/link";
 import { RowLink } from "@/components/client";
 import { Card, Empty, PageHeader, StatusBadge } from "@/components/ui";
@@ -14,6 +15,7 @@ export default async function Campaigns() {
   return (
     <div>
       <PageHeader title="Campaigns" sub="AI calling, texting and email to sellers and buyers, inside each state's hours and limits." actions={<Link href="/campaigns/new" className="btn btn-primary">+ New campaign</Link>} />
+      <SectionTabs set="calls" active="/campaigns" />
       <Card pad={false}>
         {camps.length ? (
           <div className="overflow-x-auto">

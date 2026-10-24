@@ -1,133 +1,246 @@
 import Link from "next/link";
-import { contractHref } from "@/lib/contracts";
-import { AutoRefresh } from "@/components/client";
-import { Card, Empty, HotBadge, PageHeader, Stat, StatusBadge } from "@/components/ui";
+import { ActionButton } from "@/components/client";
+import { FeeReceived } from "@/components/fee";
+import { CallButton } from "@/components/phone";
+import { Card, Stat } from "@/components/ui";
 import { db } from "@/lib/db";
-import { dealScope, pageCtx } from "@/lib/session";
-import { ago, fmtDate, usd } from "@/lib/util";
+import { AUTO_TASKS } from "@/lib/engine";
+import { recommendations } from "@/lib/recommend";
+import { can, dealScope, pageCtx } from "@/lib/session";
+import { setupSteps } from "@/lib/setup";
+import { ago, fmtDate, fullName, usd } from "@/lib/util";
+import { taskAction } from "../actions/ops";
+import { recAction } from "../actions/recommend";
 
-export default async function CommandCentre() {
+// Today: everything that needs you, in one list, each with the one button that does it.
+
+const KIND: Record<string, string> = {
+  final_offer: "Approve the final offer",
+  offer_over_limit: "Seller wants more than your maximum",
+  agent_request: "The AI needs your decision",
+  price_below_floor: "Investor offered below your minimum",
+  emd: "Place earnest money?",
+  payment: "Approve a payment",
+  demand_check: "Start looking for buyers?",
+  full_marketing: "Market the deal to investors?",
+  offer_letter: "Send the written offer?",
+  contract: "Approve a contract",
+};
+
+type Item = { key: string; tone: "warn" | "good" | "hot" | ""; tag: string; title: string; why?: string; when?: string; actions: React.ReactNode };
+
+export default async function Today() {
   const c = await pageCtx();
   const ws = c.workspace.id;
   const now = new Date();
-  const dayAgo = new Date(Date.now() - 864e5);
+  const endOfDay = new Date(now);
+  endOfDay.setHours(23, 59, 59, 999);
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-  const [approvals, hot, nearAgreement, tasks, callsToday, textsToday, underContract, closing, paidMonth, pipeline, deadlines, packs, recent, running] = await Promise.all([
-    db.approval.findMany({ where: { workspaceId: ws, status: "pending" }, orderBy: { createdAt: "asc" }, take: 6 }),
-    db.opportunity.findMany({ where: { workspaceId: ws, hotScore: { gte: 50 }, stage: { notIn: ["CLOSED"] }, ...dealScope(c) }, include: { property: true, interests: { where: { serious: true } } }, orderBy: { hotScore: "desc" }, take: 5 }),
-    db.opportunity.count({ where: { workspaceId: ws, verificationSentAt: { not: null }, approvedAt: null, ...dealScope(c) } }),
-    db.task.findMany({ where: { workspaceId: ws, status: "open", dueAt: { lte: new Date(Date.now() + 864e5) }, OR: [{ assignee: null }, { assignee: c.user.id }, { assignee: { not: { startsWith: "agent:" } } }] }, orderBy: [{ priority: "asc" }, { dueAt: "asc" }], take: 8 }),
-    db.interaction.count({ where: { workspaceId: ws, channel: "call", createdAt: { gte: dayAgo } } }),
-    db.interaction.count({ where: { workspaceId: ws, channel: "sms", createdAt: { gte: dayAgo } } }),
-    db.opportunity.count({ where: { workspaceId: ws, stage: { in: ["UNDER_CONTRACT", "DISPOSITION"] }, ...dealScope(c) } }),
-    db.opportunity.count({ where: { workspaceId: ws, stage: "CLOSING", ...dealScope(c) } }),
+  const canDeals = can(c.role, "deals");
+  const canClose = can(c.role, "closing");
+  const [approvals, closings, tasks, paidMonth, pipeline, recent, deadlines, steps, recs] = await Promise.all([
+    can(c.role, "approve") ? db.approval.findMany({ where: { workspaceId: ws, status: "pending" }, orderBy: { createdAt: "asc" }, take: 12 }) : Promise.resolve([]),
+    canClose
+      ? db.transaction.findMany({ where: { workspaceId: ws, paidAt: null, opportunity: { ...dealScope(c), stage: { in: ["CLOSING", "CLOSED"] } }, OR: [{ closingAt: { lte: new Date(Date.now() + 3 * 864e5) } }, { closingAt: null }] }, include: { opportunity: { include: { property: true } } }, take: 8 })
+      : Promise.resolve([]),
+    db.task.findMany({ where: { workspaceId: ws, status: "open", dueAt: { lte: endOfDay }, OR: [{ kind: { notIn: [...AUTO_TASKS] }, OR: [{ assignee: null }, { assignee: c.user.id }, { assignee: { not: { startsWith: "agent:" } } }] }, { kind: { in: [...AUTO_TASKS] }, assignee: { not: null }, NOT: { assignee: { startsWith: "agent:" } } }] }, orderBy: [{ priority: "asc" }, { dueAt: "asc" }], take: 20 }),
     db.payment.aggregate({ where: { workspaceId: ws, direction: "in", status: "received", updatedAt: { gte: monthStart } }, _sum: { amount: true } }),
-    db.opportunity.groupBy({ by: ["stage"], where: { workspaceId: ws, ...dealScope(c) }, _count: true }),
-    db.contract.findMany({ where: { workspaceId: ws, status: "effective", OR: [{ emdDueAt: { gte: now, lte: new Date(Date.now() + 5 * 864e5) } }, { optionEndsAt: { gte: now, lte: new Date(Date.now() + 5 * 864e5) } }, { closingAt: { gte: now, lte: new Date(Date.now() + 7 * 864e5) } }] }, take: 6 }),
-    db.statePack.findMany({ where: { workspaceId: ws }, select: { state: true, status: true } }),
-    db.interaction.findMany({ where: { workspaceId: ws, channel: { in: ["call", "sms", "email"] } }, include: { contact: true }, orderBy: { createdAt: "desc" }, take: 6 }),
-    db.campaign.count({ where: { workspaceId: ws, status: "running" } }),
+    db.opportunity.groupBy({ by: ["stage"], where: { workspaceId: ws, ...dealScope(c), OR: [{ exception: null }, { exception: { notIn: ["DECLINED", "WITHDRAWN", "CONTRACT_FAILED", "DO_NOT_CONTACT"] } }] }, _count: true }),
+    db.interaction.findMany({ where: { workspaceId: ws, channel: { in: ["call", "sms", "email"] } }, include: { contact: { select: { id: true, firstName: true, lastName: true, company: true } } }, orderBy: { createdAt: "desc" }, take: 6 }),
+    db.contract.findMany({ omit: { finalPdf: true, sourcePdf: true }, where: { workspaceId: ws, status: "effective", OR: [{ emdDueAt: { gte: now, lte: new Date(Date.now() + 3 * 864e5) } }, { optionEndsAt: { gte: now, lte: new Date(Date.now() + 3 * 864e5) } }] }, take: 5 }),
+    c.workspace.isDemo ? Promise.resolve([]) : setupSteps(ws, c.user.phone),
+    canDeals ? recommendations(ws, { ...dealScope(c), AND: [{ stage: { in: ["ENGAGED", "QUALIFIED", "PROPERTY_DISCOVERY", "UNDERWRITING", "OFFER_READY", "NEGOTIATION"] } }] }).then((r) => r.recs.filter((x) => ["sign", "negotiate", "first_offer"].includes(x.action)).slice(0, 6)) : Promise.resolve([]),
   ]);
+  const contactIds = [...new Set([...tasks.map((t) => t.contactId), ...recs.map((r) => r.sellerId)].filter(Boolean) as string[])];
+  const contacts = contactIds.length ? await db.contact.findMany({ where: { id: { in: contactIds } }, select: { id: true, firstName: true, lastName: true, company: true, phone: true, doNotContact: true } }) : [];
+  const person = (id?: string | null) => contacts.find((x) => x.id === id);
+
+  const items: Item[] = [];
+  for (const a of approvals) {
+    const d = (a.detail || {}) as { proposedPrice?: number; price?: number };
+    items.push({
+      key: a.id,
+      tone: "warn",
+      tag: "Decision",
+      title: KIND[a.kind] || "Needs your decision",
+      why: a.title,
+      when: ago(a.createdAt),
+      actions: (
+        <Link href={`/approvals#${a.id}`} className="btn btn-primary w-full sm:w-auto">
+          Decide{d.proposedPrice || d.price ? ` (${usd(d.proposedPrice || d.price)})` : ""}
+        </Link>
+      ),
+    });
+  }
+  for (const t of closings) {
+    items.push({
+      key: t.id,
+      tone: "good",
+      tag: "Money",
+      title: `Did the fee arrive for ${t.opportunity.property.address}?`,
+      why: t.closingAt ? `Closing ${t.closingAt < now ? "was" : "is"} ${fmtDate(t.closingAt)}` : "Deal is closing",
+      actions: <FeeReceived opportunityId={t.opportunityId} expected={t.assignmentFee} compact />,
+    });
+  }
+  for (const r of recs) {
+    const p = person(r.sellerId);
+    items.push({
+      key: r.key,
+      tone: r.action === "sign" ? "hot" : "",
+      tag: r.action === "sign" ? "Ready to sign" : r.action === "negotiate" ? "Negotiate" : "Make an offer",
+      title: `${r.headline}: ${r.row.address}`,
+      why: r.reasons[0],
+      actions: (
+        <div className="flex flex-wrap gap-2">
+          {r.price && (
+            <ActionButton action={recAction} hidden={{ opportunityId: r.opportunityId, key: r.key, action: r.action, price: String(r.price), do: "letter" }} className="btn btn-primary" confirm={`Email and text ${p ? fullName(p) : "the seller"} a written offer of ${usd(r.price)}?`}>
+              Send offer {usd(r.price)}
+            </ActionButton>
+          )}
+          {p && !p.doNotContact && <CallButton contactId={p.id} name={fullName(p)} phone={p.phone} opportunityId={r.opportunityId} label="Call seller" className="btn btn-ghost" />}
+          <Link href={`/deals/${r.opportunityId}`} className="btn btn-ghost">
+            Open
+          </Link>
+        </div>
+      ),
+    });
+  }
+  for (const k of deadlines) {
+    const f = k.fields as Record<string, string>;
+    const what = k.emdDueAt && k.emdDueAt <= new Date(Date.now() + 3 * 864e5) ? `Earnest money due ${fmtDate(k.emdDueAt)}` : `Inspection period ends ${fmtDate(k.optionEndsAt)}`;
+    items.push({ key: k.id, tone: "warn", tag: "Deadline", title: `${what}: ${f.property_address || "deal"}`, actions: <Link href={k.opportunityId ? `/deals/${k.opportunityId}?tab=closing` : `/closing/documents/${k.id}`} className="btn btn-ghost">Open</Link> });
+  }
+  for (const t of tasks) {
+    const p = person(t.contactId);
+    const href = t.entityType === "opportunity" && t.entityId ? `/deals/${t.entityId}` : t.contactId ? `/contacts/${t.contactId}` : "/ops?tab=tasks";
+    const isCall = ["call", "follow_up"].includes(t.kind) && p && !p.doNotContact;
+    items.push({
+      key: t.id,
+      tone: t.priority === 1 ? "warn" : "",
+      tag: t.kind === "reply_review" ? "Reply" : isCall ? "Call" : "To do",
+      title: t.title,
+      why: t.reason || undefined,
+      when: t.dueAt < now ? `due ${ago(t.dueAt)}` : `today ${fmtDate(t.dueAt, true).split(", ").pop()}`,
+      actions: (
+        <div className="flex flex-wrap gap-2">
+          {isCall && <CallButton contactId={p!.id} name={fullName(p!)} phone={p!.phone} opportunityId={t.entityType === "opportunity" ? t.entityId || undefined : undefined} />}
+          {t.kind === "reply_review" ? (
+            <Link href={href} className="btn btn-primary">
+              Review reply
+            </Link>
+          ) : (
+            !isCall && (
+              <Link href={href} className="btn btn-ghost">
+                Open
+              </Link>
+            )
+          )}
+          <ActionButton action={taskAction} hidden={{ taskId: t.id, what: "done" }} className="btn btn-ghost">
+            Done
+          </ActionButton>
+        </div>
+      ),
+    });
+  }
+
   const stageCount = Object.fromEntries(pipeline.map((p) => [p.stage, p._count]));
   const funnel = [
-    ["Outreach", ["NEW", "ELIGIBLE", "OUTREACH"]],
-    ["Engaged", ["ENGAGED", "QUALIFIED", "PROPERTY_DISCOVERY"]],
-    ["Underwriting", ["UNDERWRITING", "OFFER_READY"]],
-    ["Negotiating", ["NEGOTIATION", "CONTRACT_PREPARATION"]],
+    ["New leads", ["NEW", "ELIGIBLE", "OUTREACH"]],
+    ["Talking", ["ENGAGED", "QUALIFIED", "PROPERTY_DISCOVERY"]],
+    ["Working out the offer", ["UNDERWRITING", "OFFER_READY"]],
+    ["Offer made", ["NEGOTIATION", "CONTRACT_PREPARATION"]],
     ["Under contract", ["UNDER_CONTRACT", "DISPOSITION"]],
     ["Closing", ["CLOSING"]],
     ["Closed", ["CLOSED"]],
   ] as const;
   const max = Math.max(1, ...funnel.map(([, ss]) => ss.reduce((a, s) => a + (stageCount[s] || 0), 0)));
-  const activePacks = packs.filter((p) => p.status === "active");
+  const callsToDo = items.filter((i) => i.tag === "Call").length;
+  const next = steps.find((s) => !s.done);
+  const doneSteps = steps.filter((s) => s.done).length;
+  const first = c.user.name.split(" ")[0];
 
   return (
     <div className="space-y-5">
-      <AutoRefresh seconds={30} />
-      <PageHeader title={`Good ${now.getHours() < 12 ? "morning" : now.getHours() < 18 ? "afternoon" : "evening"}, ${c.user.name.split(" ")[0]}`} sub={`${c.workspace.name} · ${activePacks.length ? `active in ${activePacks.map((p) => p.state).join(", ")}` : "no State Pack active yet"} · ${running} campaign${running === 1 ? "" : "s"} running`} />
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight">
+          Good {now.getHours() < 12 ? "morning" : now.getHours() < 18 ? "afternoon" : "evening"}
+          {first && first !== "Demo" ? `, ${first}` : ""}
+        </h1>
+        <p className="mt-1 text-sm text-muted">{items.length ? `${items.length} thing${items.length === 1 ? "" : "s"} need${items.length === 1 ? "s" : ""} you today.` : "Nothing needs you right now."}</p>
+      </div>
 
-      {!activePacks.length && !c.workspace.isDemo && (
-        <div className="rounded-xl bg-warn-soft px-4 py-3 text-sm text-warn">
-          Outreach is off until a State Pack is reviewed and activated. <Link href="/settings/states" className="font-semibold underline">Review State Packs</Link>
-        </div>
+      {next && (
+        <Card title={`Get set up · ${doneSteps} of ${steps.length} done`}>
+          <div className="mb-3 h-2 rounded-full bg-soft">
+            <div className="h-2 rounded-full bg-brand" style={{ width: `${(doneSteps / steps.length) * 100}%` }} />
+          </div>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="min-w-0">
+              <div className="font-semibold">Next: {next.title}</div>
+              <div className="text-sm text-muted">{next.why}</div>
+            </div>
+            <Link href={next.href} className="btn btn-primary">
+              Do it now
+            </Link>
+          </div>
+          <details className="mt-3">
+            <summary className="cursor-pointer text-sm text-muted">See all steps</summary>
+            <ul className="mt-2 space-y-1.5">
+              {steps.map((s) => (
+                <li key={s.title}>
+                  <Link href={s.href} className="flex items-center gap-2 text-sm">
+                    <span className={`grid h-5 w-5 shrink-0 place-items-center rounded-full text-[11px] ${s.done ? "bg-brand text-white" : "border border-line"}`}>{s.done ? "✓" : ""}</span>
+                    <span className={s.done ? "text-muted line-through" : ""}>{s.title}</span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </details>
+        </Card>
       )}
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <Stat label="Needs you" value={approvals.length} sub="approvals waiting" href="/approvals" tone={approvals.length ? "warn" : undefined} />
-        <Stat label="Hot deals" value={hot.filter((h) => h.hotScore >= 70).length} sub={`${nearAgreement} near agreement`} href="/deals?view=hot" tone="hot" />
-        <Stat label="Under contract" value={underContract + closing} sub={`${closing} closing`} href="/closing" />
-        <Stat label="Paid this month" value={usd(paidMonth._sum.amount || 0)} sub={`${callsToday} calls · ${textsToday} texts in 24h`} tone="good" />
+        <Stat label="Needs you" value={items.length} tone={items.length ? "warn" : undefined} />
+        <Stat label="Calls to make" value={callsToDo} href="/dialer" />
+        <Stat label="Under contract" value={(stageCount.UNDER_CONTRACT || 0) + (stageCount.DISPOSITION || 0) + (stageCount.CLOSING || 0)} href="/closing" />
+        <Stat label="Paid this month" value={usd(paidMonth._sum.amount || 0)} tone="good" href="/reports" />
       </div>
 
-      <div className="grid gap-5 lg:grid-cols-3">
-        <Card title="Waiting for your decision" actions={<Link href="/approvals" className="text-sm text-brand">All</Link>} className="lg:col-span-2" pad={false}>
-          {approvals.length ? (
-            <ul className="divide-y divide-line">
-              {approvals.map((a) => (
-                <li key={a.id}>
-                  <Link href={`/approvals#${a.id}`} className="flex items-center justify-between gap-3 px-4 py-3 hover:bg-soft">
-                    <div className="min-w-0">
-                      <div className="truncate text-sm font-medium">{a.title}</div>
-                      <div className="text-xs text-muted">
-                        {a.kind.replace(/_/g, " ")} · {ago(a.createdAt)}
-                      </div>
-                    </div>
-                    <span className="btn btn-primary btn-sm">Review</span>
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <Empty title="Nothing waiting">Final offers, earnest money, payments and over-limit requests appear here.</Empty>
-          )}
-        </Card>
+      <section>
+        <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-muted">Your to-do list</h2>
+        {items.length ? (
+          <ul className="space-y-2">
+            {items.map((i) => (
+              <li key={i.key} className="card p-4">
+                <div className="flex flex-wrap items-center gap-2 text-xs">
+                  <span className={`badge ${i.tone === "warn" ? "badge-warn" : i.tone === "good" ? "badge-good" : i.tone === "hot" ? "badge-hot" : ""}`}>{i.tag}</span>
+                  {i.when && <span className="text-muted">{i.when}</span>}
+                </div>
+                <div className="mt-1.5 font-semibold">{i.title}</div>
+                {i.why && <div className="mt-0.5 text-sm text-muted">{i.why}</div>}
+                <div className="mt-3">{i.actions}</div>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <div className="card p-6 text-center text-sm text-muted">All clear. New decisions, calls and offers show up here as they come in.</div>
+        )}
+        <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm">
+          <Link href="/approvals" className="text-brand">
+            All decisions
+          </Link>
+          <Link href="/recommendations" className="text-brand">
+            All AI recommendations
+          </Link>
+          <Link href="/ops?tab=tasks" className="text-brand">
+            All tasks
+          </Link>
+        </div>
+      </section>
 
-        <Card title="Today's tasks" actions={<Link href="/ops?tab=tasks" className="text-sm text-brand">All</Link>} pad={false}>
-          {tasks.length ? (
-            <ul className="divide-y divide-line">
-              {tasks.map((t) => (
-                <li key={t.id} className="px-4 py-2.5 text-sm">
-                  <Link href={t.entityType === "opportunity" && t.entityId ? `/deals/${t.entityId}` : t.contactId ? `/contacts/${t.contactId}` : "/ops?tab=tasks"} className="block hover:text-brand">
-                    <span className={t.priority === 1 ? "font-semibold" : ""}>{t.title}</span>
-                    <span className="block text-xs text-muted">{t.dueAt < now ? `due ${ago(t.dueAt)}` : fmtDate(t.dueAt, true)}</span>
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <Empty title="All clear" />
-          )}
-        </Card>
-      </div>
-
-      <div className="grid gap-5 lg:grid-cols-3">
-        <Card title="Hot deals" className="lg:col-span-2" pad={false}>
-          {hot.length ? (
-            <ul className="divide-y divide-line">
-              {hot.map((o) => (
-                <li key={o.id}>
-                  <Link href={`/deals/${o.id}`} className="flex items-center justify-between gap-3 px-4 py-3 hover:bg-soft">
-                    <div className="min-w-0">
-                      <div className="truncate text-sm font-medium">{o.property.address}</div>
-                      <div className="text-xs text-muted">
-                        {o.property.city}, {o.property.state} · {o.interests.length} serious buyer{o.interests.length === 1 ? "" : "s"}
-                      </div>
-                    </div>
-                    <div className="flex shrink-0 items-center gap-2">
-                      <HotBadge score={o.hotScore} />
-                      <StatusBadge s={o.stage} />
-                    </div>
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <Empty title="No hot deals yet">A deal turns hot when two or more serious investors respond.</Empty>
-          )}
-        </Card>
-
-        <Card title="Pipeline">
-          <div className="space-y-2">
+      <div className="grid gap-5 lg:grid-cols-2">
+        <Card title="Your deals right now">
+          <div className="space-y-2.5">
             {funnel.map(([label, ss]) => {
               const n = ss.reduce((a, s) => a + (stageCount[s] || 0), 0);
               return (
@@ -144,40 +257,17 @@ export default async function CommandCentre() {
             })}
           </div>
         </Card>
-      </div>
-
-      <div className="grid gap-5 lg:grid-cols-2">
-        <Card title="Deadlines (next 7 days)" pad={false}>
-          {deadlines.length ? (
-            <ul className="divide-y divide-line">
-              {deadlines.map((k) => {
-                const f = k.fields as Record<string, string>;
-                const items = [k.emdDueAt && ["Earnest money", k.emdDueAt], k.optionEndsAt && ["Option ends", k.optionEndsAt], k.closingAt && ["Closing", k.closingAt]].filter(Boolean) as [string, Date][];
-                return (
-                  <li key={k.id}>
-                    <Link href={contractHref(k)} className="block px-4 py-3 text-sm hover:bg-soft">
-                      <div className="font-medium">{f.property_address}</div>
-                      <div className="text-xs text-muted">{items.map(([l, d]) => `${l} ${fmtDate(d)}`).join(" · ")}</div>
-                    </Link>
-                  </li>
-                );
-              })}
-            </ul>
-          ) : (
-            <Empty title="No deadlines this week" />
-          )}
-        </Card>
-        <Card title="Latest conversations" actions={<Link href="/ops" className="text-sm text-brand">Activity</Link>} pad={false}>
+        <Card title="Latest conversations" pad={false}>
           {recent.length ? (
             <ul className="divide-y divide-line">
               {recent.map((i) => (
                 <li key={i.id}>
                   <Link href={i.contactId ? `/contacts/${i.contactId}` : "/ops"} className="block px-4 py-3 text-sm hover:bg-soft">
                     <div className="flex justify-between gap-2">
-                      <span className="font-medium">
-                        {i.channel === "call" ? "📞" : i.channel === "sms" ? "💬" : "✉️"} {i.contact ? `${i.contact.firstName} ${i.contact.lastName}`.trim() || i.contact.company : i.fromAddr || "Unknown"}
+                      <span className="truncate font-medium">
+                        {i.channel === "call" ? "📞" : i.channel === "sms" ? "💬" : "✉️"} {i.contact ? fullName(i.contact) : i.fromAddr || "Unknown"}
                       </span>
-                      <span className="text-xs text-muted">{ago(i.createdAt)}</span>
+                      <span className="shrink-0 text-xs text-muted">{ago(i.createdAt)}</span>
                     </div>
                     <div className="line-clamp-2 text-xs text-muted">{i.summary || i.body?.slice(0, 160) || i.outcome || i.status}</div>
                   </Link>
@@ -185,12 +275,10 @@ export default async function CommandCentre() {
               ))}
             </ul>
           ) : (
-            <Empty title="No conversations yet" />
+            <p className="p-4 text-sm text-muted">No conversations yet.</p>
           )}
         </Card>
       </div>
     </div>
   );
 }
-
-

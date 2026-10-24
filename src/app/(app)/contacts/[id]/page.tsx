@@ -16,6 +16,7 @@ import { addNoteAction, callContactAction, consentAction, dncContactAction, emai
 import { correctFactAction, editSummaryAction } from "../../../actions/deals";
 import { FilesPanel } from "@/components/files";
 import { Timeline } from "@/components/timeline";
+import { CallButton } from "@/components/phone";
 
 export default async function ContactPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ ch?: string; lim?: string }> }) {
   const sp = await searchParams;
@@ -63,11 +64,9 @@ export default async function ContactPage({ params, searchParams }: { params: Pr
         actions={
           canCall ? (
             <>
-              <ActionButton action={callContactAction} hidden={{ contactId: id, mode: "me" }} className="btn btn-primary">
-                📞 Call
-              </ActionButton>
+              <CallButton contactId={id} name={fullName(ct) || "Contact"} phone={ct.phone} />
               <ActionButton action={callContactAction} hidden={{ contactId: id, mode: "ai" }} className="btn btn-ghost">
-                🤖 AI call
+                Have the AI call
               </ActionButton>
             </>
           ) : null
@@ -215,7 +214,7 @@ export default async function ContactPage({ params, searchParams }: { params: Pr
           {isBuyer ? (
             <Card title="Deals presented" pad={false}>
               {ct.interests.length ? (
-                <table className="data">
+                <div className="overflow-x-auto"><table className="data">
                   <tbody>
                     {ct.interests.map((i) => (
                       <tr key={i.id}>
@@ -233,7 +232,7 @@ export default async function ContactPage({ params, searchParams }: { params: Pr
                       </tr>
                     ))}
                   </tbody>
-                </table>
+                </table></div>
               ) : (
                 <Empty title="No deals presented yet" />
               )}

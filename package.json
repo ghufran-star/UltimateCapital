@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@prisma/client": "^6.16.0",
+    "@twilio/voice-sdk": "^2.11.2",
     "next": "^15.5.0",
     "pdf-lib": "^1.17.1",
     "prisma": "^6.16.0",

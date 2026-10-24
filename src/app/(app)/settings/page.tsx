@@ -1,62 +1,63 @@
 import Link from "next/link";
 import { Card, PageHeader } from "@/components/ui";
-import { loadSettings } from "@/lib/config";
 import { db } from "@/lib/db";
 import { pageCtx } from "@/lib/session";
+import { setupSteps } from "@/lib/setup";
 
 export default async function SettingsHome() {
   const c = await pageCtx();
   const ws = c.workspace.id;
-  const s = await loadSettings(ws);
-  const [packs, agents, templates, numbers, titles, members, rs] = await Promise.all([
-    db.statePack.findMany({ where: { workspaceId: ws } }),
-    db.agent.findMany({ where: { workspaceId: ws } }),
-    db.contractTemplate.findMany({ where: { workspaceId: ws, active: true } }),
+  const [packs, agents, templates, numbers, members, rs, steps] = await Promise.all([
+    db.statePack.findMany({ where: { workspaceId: ws }, select: { status: true } }),
+    db.agent.count({ where: { workspaceId: ws } }),
+    db.contractTemplate.findMany({ where: { workspaceId: ws, active: true }, select: { body: true } }),
     db.phoneNumber.count({ where: { workspaceId: ws } }),
-    db.titleCompany.count({ where: { workspaceId: ws } }),
     db.membership.count({ where: { workspaceId: ws } }),
-    db.ruleSet.findFirst({ where: { workspaceId: ws, active: true } }),
+    db.ruleSet.findFirst({ where: { workspaceId: ws, active: true }, select: { version: true } }),
+    c.workspace.isDemo ? Promise.resolve([]) : setupSteps(ws, c.user.phone),
   ]);
   const sample = templates.some((t) => t.body.startsWith("SAMPLE ONLY"));
-  const steps: [boolean, string, string, string][] = [
-    [!!s.PUBLIC_URL, "Set your public app URL", "Needed for signing links and call/text webhooks.", "/settings/integrations"],
-    [!!s.ANTHROPIC_API_KEY, "Add your Claude API key", "Powers call analysis, title emails and research.", "/settings/integrations"],
-    [!!(s.RETELL_API_KEY && s.TWILIO_ACCOUNT_SID), "Connect calling and texting", "Retell for AI calls, Twilio for texts and your own calls.", "/settings/integrations"],
-    [!!(s.RESEND_API_KEY && s.EMAIL_FROM), "Connect email", "Resend sends contracts, deal packages and title emails.", "/settings/integrations"],
-    [packs.some((p) => p.status === "active"), "Review and activate a State Pack", "No outreach happens in a state until you activate its pack.", "/settings/states"],
-    [!sample && templates.length > 0, "Add your attorney's contracts", "Replace the sample templates.", "/settings/templates"],
-    [agents.some((a) => a.retellAgentId), "Sync your AI agents to Retell", "Publishes the 6-layer prompts and tools.", "/settings/agents"],
-    [numbers > 0, "Add a phone number", "For inbound calls and texts.", "/settings/phones"],
+  const done = steps.filter((s) => s.done).length;
+  const main: [string, string, string][] = [
+    ["Connections", "Phone line, AI calling, email, data, Do Not Call checks", "/settings/integrations"],
+    ["Phone numbers", `${numbers} number${numbers === 1 ? "" : "s"} · who answers incoming calls`, "/settings/phones"],
+    ["States you work in", `${packs.filter((p) => p.status === "active").length} turned on`, "/settings/states"],
+    ["AI callers", `${agents} agents · what they say and do`, "/settings/agents"],
+    ["Contracts", `${templates.length} templates${sample ? " · samples still in use" : ""}`, "/settings/templates"],
+    ["Team", `${members} people · invites`, "/settings/team"],
+    ["My profile", "Name, your mobile, password", "/settings/profile"],
+    ["Phone app & alerts", "Install on your phone; alerts for decisions and hot deals", "/settings/app"],
   ];
-  const done = steps.filter((x) => x[0]).length;
-  const links: [string, string, string][] = [
-    ["Controls", "Pause switches, what runs by itself, spend cap", "/settings/controls"],
-    ["Autopilot", "Next step per stage, stuck deals, follow-ups, replies", "/settings/autopilot"],
-    ["Deal rules", `v${rs?.version ?? 1} live · offers, margins, buyer rounds, variations`, "/settings/rules"],
-    ["States", `${packs.filter((p) => p.status === "active").length} active of ${packs.length}`, "/settings/states"],
-    ["AI agents", `${agents.length} agents · 6-layer prompts`, "/settings/agents"],
-    ["Contract templates", `${templates.length} active${sample ? " · sample in use" : ""}`, "/settings/templates"],
-    ["Integrations", "Claude, Retell, Twilio, Resend, RentCast, DNC", "/settings/integrations"],
-    ["Phone numbers", `${numbers} numbers · inbound routing`, "/settings/phones"],
-    ["Title companies", `${titles} saved`, "/closing/title"],
-    ["Compliance", "DNC lists, suppressions, consent", "/settings/compliance"],
-    ["Team & workspaces", `${members} members · invites · demo`, "/settings/team"],
-    ["My profile", "Name, phone for calls, password", "/settings/profile"],
-    ["Phone app & alerts", "Install on your phone; alerts for approvals and hot deals", "/settings/app"],
+  const advanced: [string, string, string][] = [
+    ["Safety switches", "Pause everything, what runs by itself, daily spend limit", "/settings/controls"],
+    ["Autopilot", "What happens automatically at each step", "/settings/autopilot"],
+    ["Pricing rules", `Version ${rs?.version ?? 1} · offers, margins, buyer prices`, "/settings/rules"],
+    ["Do Not Call & consent", "DNC lists, blocked numbers, consent records", "/settings/compliance"],
+    ["Activity log", "Everything the AI and the team did", "/ops"],
   ];
+  const Grid = ({ items }: { items: [string, string, string][] }) => (
+    <div className="grid gap-3 md:grid-cols-2">
+      {items.map(([t, d, href]) => (
+        <Link key={href} href={href} className="card block p-4 hover:border-brand">
+          <div className="font-semibold">{t}</div>
+          <div className="text-sm text-muted">{d}</div>
+        </Link>
+      ))}
+    </div>
+  );
   return (
     <div className="space-y-5">
-      <PageHeader title="Settings" sub={c.workspace.name} />
-      {done < steps.length && !c.workspace.isDemo && (
-        <Card title={`Getting set up · ${done}/${steps.length}`} pad={false}>
+      <PageHeader title="Settings" sub={c.workspace.isDemo ? "Test mode: connections are pretend" : c.workspace.name} />
+      {steps.length > 0 && done < steps.length && (
+        <Card title={`Getting set up · ${done} of ${steps.length}`} pad={false}>
           <ul className="divide-y divide-line">
-            {steps.map(([ok, t, d, href]) => (
-              <li key={t}>
-                <Link href={href} className="flex items-center gap-3 px-4 py-3 hover:bg-soft">
-                  <span className={`grid h-6 w-6 shrink-0 place-items-center rounded-full text-xs ${ok ? "bg-brand text-white" : "border border-line"}`}>{ok ? "✓" : ""}</span>
-                  <span>
-                    <span className={`block text-sm font-medium ${ok ? "text-muted line-through" : ""}`}>{t}</span>
-                    <span className="block text-xs text-muted">{d}</span>
+            {steps.map((s) => (
+              <li key={s.title}>
+                <Link href={s.href} className="flex items-center gap-3 px-4 py-3 hover:bg-soft">
+                  <span className={`grid h-6 w-6 shrink-0 place-items-center rounded-full text-xs ${s.done ? "bg-brand text-white" : "border border-line"}`}>{s.done ? "✓" : ""}</span>
+                  <span className="min-w-0">
+                    <span className={`block text-sm font-medium ${s.done ? "text-muted line-through" : ""}`}>{s.title}</span>
+                    <span className="block text-xs text-muted">{s.why}</span>
                   </span>
                 </Link>
               </li>
@@ -64,14 +65,13 @@ export default async function SettingsHome() {
           </ul>
         </Card>
       )}
-      <div className="grid gap-3 md:grid-cols-2">
-        {links.map(([t, d, href]) => (
-          <Link key={href} href={href} className="card block p-4 hover:border-brand">
-            <div className="font-semibold">{t}</div>
-            <div className="text-sm text-muted">{d}</div>
-          </Link>
-        ))}
-      </div>
+      <Grid items={main} />
+      <details className="group">
+        <summary className="cursor-pointer select-none py-2 text-sm font-semibold text-muted">Advanced</summary>
+        <div className="mt-2">
+          <Grid items={advanced} />
+        </div>
+      </details>
     </div>
   );
 }

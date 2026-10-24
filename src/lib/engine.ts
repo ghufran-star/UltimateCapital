@@ -281,7 +281,8 @@ export async function executeTask(t: { id: string; workspaceId: string; kind: st
 export async function runTasks(limit = 10) {
   await db.task.updateMany({ where: { status: "running", updatedAt: { lt: new Date(Date.now() - 10 * 60_000) } }, data: { status: "open" } });
   const due = await db.task.findMany({
-    where: { status: "open", dueAt: { lte: new Date() }, kind: { in: [...AUTO_TASKS] } },
+    // Tasks given to a person are never run automatically.
+    where: { status: "open", dueAt: { lte: new Date() }, kind: { in: [...AUTO_TASKS] }, OR: [{ assignee: null }, { assignee: { startsWith: "agent:" } }] },
     orderBy: [{ priority: "asc" }, { dueAt: "asc" }],
     take: limit,
   });

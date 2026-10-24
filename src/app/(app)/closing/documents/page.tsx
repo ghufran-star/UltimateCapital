@@ -1,3 +1,4 @@
+import { SectionTabs } from "@/components/sections";
 import Link from "next/link";
 import { RowLink } from "@/components/client";
 import { Card, Empty, PageHeader, StatusBadge } from "@/components/ui";
@@ -7,13 +8,14 @@ import { ago } from "@/lib/util";
 
 export default async function Documents() {
   const c = await pageCtx();
-  const docs = await db.contract.findMany({ where: { workspaceId: c.workspace.id, kind: "document" }, include: { signers: true, opportunity: { include: { property: true } } }, orderBy: { updatedAt: "desc" }, take: 200 });
+  const docs = await db.contract.findMany({ where: { workspaceId: c.workspace.id, kind: "document" }, omit: { finalPdf: true, sourcePdf: true }, include: { signers: true, opportunity: { include: { property: true } } }, orderBy: { updatedAt: "desc" }, take: 200 });
   return (
     <div>
       <PageHeader back={{ href: "/closing", label: "Contracts & closing" }} title="Documents for signature" sub="Any PDF you send by hand: addenda, disclosures, extensions, JV agreements, W-9s." actions={<Link href="/closing/documents/new" className="btn btn-primary">+ Send a PDF for signature</Link>} />
+      <SectionTabs set="closing" active="/closing/documents" />
       <Card pad={false}>
         {docs.length ? (
-          <table className="data">
+          <div className="overflow-x-auto"><table className="data">
             <thead>
               <tr>
                 <th>Document</th>
@@ -37,7 +39,7 @@ export default async function Documents() {
                 </RowLink>
               ))}
             </tbody>
-          </table>
+          </table></div>
         ) : (
           <Empty title="No documents yet" action={<Link href="/closing/documents/new" className="btn btn-primary">Send a PDF for signature</Link>} />
         )}

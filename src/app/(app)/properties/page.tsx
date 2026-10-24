@@ -4,6 +4,7 @@ import { checkNumbersAction } from "../../actions/agents";
 import { ActionButton } from "@/components/client";
 import type { Prisma } from "@prisma/client";
 import { RowLink } from "@/components/client";
+import { CallButton } from "@/components/phone";
 import { Combo } from "@/components/combo";
 import { Card, Empty, PageHeader, StatusBadge, Tabs } from "@/components/ui";
 import { conditionShort, label as catLabel, LEAD_SOURCES, OCCUPANCY, OWNER_TYPES, PROPERTY_TYPES, SITUATIONS, shortType, US_STATES } from "@/lib/catalog";
@@ -71,7 +72,7 @@ export default async function Sellers({ searchParams }: { searchParams: Promise<
   return (
     <div>
       <PageHeader
-        title="Sellers & properties"
+        title="Sellers"
         actions={
           <>
             {(
@@ -119,6 +120,7 @@ export default async function Sellers({ searchParams }: { searchParams: Promise<
                     <th>Last contact</th>
                     <th>Next step</th>
                     <th>Assigned</th>
+                    <th></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -158,6 +160,7 @@ export default async function Sellers({ searchParams }: { searchParams: Promise<
                         </td>
                         <td className="max-w-48 text-xs">{deal?.nextStep || s.openQuestions[0] || "—"}</td>
                         <td className="text-xs">{who(deal?.assigneeId || s.assigneeId)}</td>
+                        <td>{!s.doNotContact && <CallButton contactId={s.id} name={fullName(s) || "Seller"} phone={s.phone} opportunityId={deal?.id} size="sm" />}</td>
                       </RowLink>
                     );
                   })}

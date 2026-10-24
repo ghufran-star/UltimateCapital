@@ -1,3 +1,4 @@
+import { SectionTabs } from "@/components/sections";
 import Link from "next/link";
 import { contractHref } from "@/lib/contracts";
 import { ActionForm, RowLink, Submit } from "@/components/client";
@@ -14,7 +15,7 @@ export default async function Closing({ searchParams }: { searchParams: Promise<
   const tab = (await searchParams).tab || "transactions";
   const [txs, contracts, payments, titleCos] = await Promise.all([
     db.transaction.findMany({ where: { workspaceId: ws, opportunity: dealScope(c) }, include: { opportunity: { include: { property: true } }, titleCompany: true }, orderBy: [{ closingAt: "asc" }] }),
-    db.contract.findMany({ where: { workspaceId: ws, status: { in: ["draft", "sent", "viewed", "partially_signed"] } }, include: { signers: true }, orderBy: { updatedAt: "desc" } }),
+    db.contract.findMany({ where: { workspaceId: ws, status: { in: ["draft", "sent", "viewed", "partially_signed"] } }, include: { signers: true }, omit: { finalPdf: true, sourcePdf: true }, orderBy: { updatedAt: "desc" } }),
     db.payment.findMany({ where: { workspaceId: ws, status: { notIn: ["cancelled"] } }, orderBy: { createdAt: "desc" }, take: 100 }),
     db.titleCompany.findMany({ where: { workspaceId: ws } }),
   ]);
@@ -26,6 +27,7 @@ export default async function Closing({ searchParams }: { searchParams: Promise<
   return (
     <div>
       <PageHeader title="Contracts & closing" sub="E-signature, title, earnest money, closing and getting paid." actions={<><Link href="/closing/documents" className="btn btn-primary">Send a PDF for signature</Link><a href="/api/export/payments" className="btn btn-ghost">Payments CSV</a><Link href="/closing/title" className="btn btn-ghost">Title companies ({titleCos.length})</Link></>} />
+      <SectionTabs set="closing" active="/closing" />
       <div className="mb-5 grid grid-cols-2 gap-3 md:grid-cols-4">
         <Stat label="Open closings" value={open.length} />
         <Stat label="Awaiting signature" value={contracts.length} tone={contracts.length ? "warn" : undefined} />

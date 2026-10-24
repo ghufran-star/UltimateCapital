@@ -138,7 +138,7 @@ export default async function Recommendations({ searchParams }: { searchParams: 
             {learned.finished < 5 ? (
               <p className="text-sm text-muted">After a few deals close or fall through, this shows which lead sources, situations, property types, states and price gaps close more often for you, and the likelihood scores use it. So far: {learned.finished} finished deal(s).</p>
             ) : (
-              <table className="data">
+              <div className="overflow-x-auto"><table className="data">
                 <thead>
                   <tr>
                     <th>Kind of deal</th>
@@ -163,7 +163,7 @@ export default async function Recommendations({ searchParams }: { searchParams: 
                       </tr>
                     ))}
                 </tbody>
-              </table>
+              </table></div>
             )}
           </Card>
           <Card title="How the recommendations have done">

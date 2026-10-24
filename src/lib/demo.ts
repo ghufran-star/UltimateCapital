@@ -13,8 +13,8 @@ import { draftPack, type StatePackData } from "./states";
 // can never reach a real person or a paid service.
 // Bump DEMO_VERSION whenever the data changes: an outdated or half-built demo rebuilds itself.
 
-const DEMO_VERSION = "5";
-const DEMO_NAME = "Demo · Sample Wholesaling Co";
+const DEMO_VERSION = "6";
+const DEMO_NAME = "Test mode · Sample Wholesaling Co";
 const COMPANY = "Sample Wholesaling Co";
 
 // ---------------------------------------------------------------- helpers
@@ -122,8 +122,8 @@ const BASE_SCENARIOS: Scenario[] = [
   { stage: "CLOSING", tag: "countersign" }, { stage: "CLOSING", tag: "settlement_issue" }, { stage: "CLOSING", tag: "settlement_ok" },
   { stage: "CLOSED", tag: "paid_month" }, { stage: "CLOSED", tag: "paid_month" }, { stage: "CLOSED", tag: "paid_month" }, { stage: "CLOSED", tag: "paid_old" }, { stage: "CLOSED", tag: "paid_old" }, { stage: "CLOSED", tag: "paid_old" },
 ];
-// Four times the story (≈250 deals), so every stage, exception and state has plenty in it.
-const SCENARIOS: Scenario[] = [...BASE_SCENARIOS, ...BASE_SCENARIOS, ...BASE_SCENARIOS, ...BASE_SCENARIOS, { stage: "CLOSED", tag: "paid_old" }, { stage: "NEGOTIATION", tag: "near" }];
+// Test mode: every stage and every situation once (small, so it builds in seconds and opens instantly).
+const SCENARIOS: Scenario[] = BASE_SCENARIOS;
 const ORDER = ["NEW", "ELIGIBLE", "OUTREACH", "ENGAGED", "QUALIFIED", "PROPERTY_DISCOVERY", "UNDERWRITING", "OFFER_READY", "NEGOTIATION", "CONTRACT_PREPARATION", "UNDER_CONTRACT", "DISPOSITION", "CLOSING", "CLOSED"];
 const atLeast = (stage: string, s: string) => ORDER.indexOf(stage) >= ORDER.indexOf(s);
 
@@ -379,7 +379,7 @@ async function seed(ws: string, ownerId: string) {
   const CO_A = ["Reed", "Shah", "Alamo", "Bayou", "Gulf Coast", "Red Oak", "Northside", "Sunbelt", "Keystone", "BlueDoor", "Magnolia", "Tri-County", "Lakeshore", "Peachtree", "Iron Horse", "First Coast", "Brickline", "Crescent", "Summit", "Copperline", "Harbor Point", "Evergreen", "Cardinal", "Rio Grande", "Prairie Wind", "Atlas", "Heritage", "Coastal", "Riverbend", "Oakmont", "Westside", "Granite Peak", "Delta", "Midtown", "Cornerstone", "Liberty", "Pioneer", "Beacon", "Bluegrass", "Lone Pine"];
   const CO_B = ["Home Flips LLC", "Rentals", "Capital Partners", "Holdings", "Investments", "Homebuyers", "Equity", "Rehab Co", "SFR Fund II", "Property Group", "Homes", "Renovations", "Turnkey", "BRRRR Group", "Cash Offers", "Housing LLC"];
   // 150 investors across every market: companies and individuals.
-  const COMPANIES: (string | null)[] = Array.from({ length: 150 }, (_, i) => (i % 6 === 3 ? null : `${CO_A[(i * 7) % CO_A.length]} ${CO_B[(i * 5 + Math.floor(i / CO_A.length)) % CO_B.length]}`));
+  const COMPANIES: (string | null)[] = Array.from({ length: 40 }, (_, i) => (i % 6 === 3 ? null : `${CO_A[(i * 7) % CO_A.length]} ${CO_B[(i * 5 + Math.floor(i / CO_A.length)) % CO_B.length]}`));
   const buyerIds: string[] = [];
   const buyerRows: { id: string; name: string; markets: string[]; states: string[]; max: number; cond: Tier; types: string[]; strategy: string; pct: number; net: number; basis: string; funds: boolean; rel: number; per: number }[] = [];
   for (let i = 0; i < COMPANIES.length; i++) {
@@ -1093,7 +1093,7 @@ async function seed(ws: string, ownerId: string) {
   // ---------- files: photos on deals, proof of funds on buyers ----------
   const photo = (room: string, hue: number) =>
     Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300"><rect width="400" height="300" fill="hsl(${hue},25%,82%)"/><rect x="60" y="120" width="280" height="150" fill="hsl(${hue},20%,65%)"/><polygon points="40,130 200,40 360,130" fill="hsl(${hue},30%,45%)"/><rect x="170" y="190" width="60" height="80" fill="hsl(${hue},15%,35%)"/><text x="200" y="30" text-anchor="middle" font-family="sans-serif" font-size="22" fill="#222">${room} (sample photo)</text></svg>`);
-  const withPhotos = deals.filter((d) => atLeast(d.stage, "PROPERTY_DISCOVERY")).slice(0, 90);
+  const withPhotos = deals.filter((d) => atLeast(d.stage, "PROPERTY_DISCOVERY")).slice(0, 30);
   const FILES: Prisma.FileObjectCreateManyInput[] = [];
   for (const [i, d] of withPhotos.entries()) {
     const rooms = ["Front", "Kitchen", "Roof", "Bathroom", "Back yard", "Living room", "Basement"].slice(0, 2 + (i % 6));
@@ -1214,7 +1214,7 @@ async function seed(ws: string, ownerId: string) {
 
   // ---------- written offer letters (sent, opened, countered) ----------
   const { renderOfferPdf } = await import("./offerletter");
-  const letterDeals = deals.filter((d) => d.stage === "NEGOTIATION" && d.calc).slice(0, 14);
+  const letterDeals = deals.filter((d) => d.stage === "NEGOTIATION" && d.calc).slice(0, 5);
   for (const [i, d] of letterDeals.entries()) {
     const price = d.calc!.sellerOffers[1] ?? d.calc!.maxBuy;
     const f = { sellerName: d.sellerName, propertyAddress: `${d.address}, ${d.market.city}, ${d.market.state}`, price, closingDays: 21, emd: 1000, inspectionDays: 7, closingCosts: "buyer" as const, asIs: true, expiresDays: 5, extraTerms: i % 4 === 1 ? "Seller may stay up to 2 weeks after closing, rent-free." : "", note: `${d.sellerName.split(" ")[0]}, thank you for talking with us. Here is our offer in writing, as discussed.`, companyName: COMPANY, fromName: "Omar Haddad", fromPhone: "+17135550142", fromEmail: "omar.demo@example.com" };
@@ -1231,7 +1231,7 @@ async function seed(ws: string, ownerId: string) {
   // ---------- AI recommendations already acted on (so "what it learned" has a history) ----------
   const finished = deals.filter((d) => d.stage === "CLOSED" || d.stage === "NEGOTIATION");
   await db.recommendation.createMany({
-    data: finished.slice(0, 40).map((d, i) => {
+    data: finished.slice(0, 20).map((d, i) => {
       const closed = d.stage === "CLOSED";
       const action = closed ? "sign" : i % 3 === 0 ? "pass" : "negotiate";
       return { workspaceId: ws, key: `${d.id}:${action}:hist${i}`, opportunityId: d.id, action, price: d.contractPrice || d.calc?.maxBuy || null, reasons: ["Sample history"], status: i % 7 === 6 ? "dismissed" : "acted", taken: action === "sign" ? "offer_letter" : action === "pass" ? "pass" : "call", decidedBy: ownerId, decidedAt: ago(between(20, 80)), outcome: closed ? "won" : null, outcomeAt: closed ? ago(between(5, 20)) : null, createdAt: ago(between(20, 80)) };
@@ -1240,12 +1240,12 @@ async function seed(ws: string, ownerId: string) {
 
   // ---------- disposition and team calls (per-agent history) ----------
   const IC: Prisma.InteractionCreateManyInput[] = [];
-  const serious = await db.buyerInterest.findMany({ where: { opportunity: { workspaceId: ws }, stage: { in: ["INTERESTED", "OFFER_SUBMITTED", "AGREEMENT_EXECUTED", "COMPLETED"] } }, include: { contact: true, opportunity: { include: { property: true } } }, take: 60 });
+  const serious = await db.buyerInterest.findMany({ where: { opportunity: { workspaceId: ws }, stage: { in: ["INTERESTED", "OFFER_SUBMITTED", "AGREEMENT_EXECUTED", "COMPLETED"] } }, include: { contact: true, opportunity: { include: { property: true } } }, take: 15 });
   for (const [i, b] of serious.entries()) {
     const when = ago(between(0, 10), between(0, 20));
     IC.push({ workspaceId: ws, contactId: b.contactId, opportunityId: b.opportunityId, channel: "call", direction: "outbound", provider: "retell", agentRole: "disposition", tools: ["send_deal_details", "record_buyer_offer"], endReason: "agent_hangup", status: "done", outcome: i % 4 === 0 ? "offer_discussed" : "interested", durationSec: between(120, 480), summary: `Walked ${b.contact.firstName} through ${b.opportunity.property.address}; ${i % 4 === 0 ? "made a verbal offer" : "wants photos and a walkthrough"}.`, body: `Agent: Hi ${b.contact.firstName}, this is Jordan, an AI assistant with ${COMPANY}. Following up on ${b.opportunity.property.address}. Did you get the numbers?\n${b.contact.firstName}: I did. What's the rehab really look like?\nAgent: The seller described a ${b.opportunity.property.conditionTier || "moderate"} rehab; photos are on your private deal page.\n${b.contact.firstName}: ${i % 4 === 0 ? "I could do it at the round two price if I can close in ten days." : "Okay, can I walk it this week?"}\nAgent: I'll pass that to the team and confirm today.`, createdAt: when, processedAt: when });
   }
-  const teamDeals = deals.filter((d) => atLeast(d.stage, "ENGAGED") && !atLeast(d.stage, "CLOSING")).slice(0, 40);
+  const teamDeals = deals.filter((d) => atLeast(d.stage, "ENGAGED") && !atLeast(d.stage, "CLOSING")).slice(0, 12);
   for (const [i, d] of teamDeals.entries()) {
     const when = ago(between(0, 14), between(0, 20));
     IC.push({ workspaceId: ws, contactId: d.sellerId, opportunityId: d.id, channel: "call", direction: i % 5 === 0 ? "inbound" : "outbound", provider: i % 3 === 0 ? "manual" : "twilio", status: "done", outcome: pick(["conversation", "conversation", "callback", "voicemail"]), durationSec: between(60, 900), summary: i % 3 === 0 ? `Logged call: ${d.sellerName.split(" ")[0]} wants to talk to family first.` : `Team call with ${d.sellerName.split(" ")[0]} about ${d.address}.`, body: i % 3 === 0 ? `Caller notes: ${pick(["Spoke for 10 minutes, wants to talk to her son first.", "Asked about closing costs; explained we pay them.", "Will send photos of the roof tonight."])}` : null, intel: json({ human: pick([who("acq"), who("acq2"), who("caller")]), loggedBy: i % 3 === 0 ? "Omar Haddad" : undefined }), createdAt: when, processedAt: when });

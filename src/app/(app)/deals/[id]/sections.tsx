@@ -87,7 +87,7 @@ export function NumbersTab({ opp, v, calc, params, writable, playbook }: { opp: 
 
         <Card title="Repairs from the seller's answers + your playbook">
           {lines.length > 0 && (
-            <table className="data mb-4">
+            <div className="overflow-x-auto"><table className="data mb-4">
               <thead>
                 <tr>
                   <th>Item</th>
@@ -107,7 +107,7 @@ export function NumbersTab({ opp, v, calc, params, writable, playbook }: { opp: 
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </table></div>
           )}
           <ActionForm action={updatePropertyAction}>
             <input type="hidden" name="propertyId" value={p.id} />
@@ -503,7 +503,7 @@ export async function ContractsTab({ opp, ws, writable, userName }: { opp: Deal;
               </span>
             }
             actions={
-              k.finalPdf ? (
+              k.finalHash ? (
                 <a href={`/api/contracts/${k.id}/pdf`} className="btn btn-ghost btn-sm" target="_blank">
                   Signed PDF
                 </a>

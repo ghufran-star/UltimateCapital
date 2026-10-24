@@ -1,3 +1,4 @@
+import { SectionTabs } from "@/components/sections";
 import Link from "next/link";
 import { ActionButton, AutoRefresh } from "@/components/client";
 import { Card, PageHeader, Stat } from "@/components/ui";
@@ -48,6 +49,7 @@ export default async function Agents({ searchParams }: { searchParams: Promise<{
           </>
         }
       />
+      <SectionTabs set="calls" active="/agents" />
       <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
         <Stat label="Calls" value={all.calls} />
         <Stat label="Connected" value={all.connected} sub={all.calls ? pct(all.connected / all.calls) : "—"} />

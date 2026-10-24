@@ -30,8 +30,8 @@ async function run(width, height, list, dir, signedIn, shoot) {
       await page.goto(BASE + u, { waitUntil: "networkidle", timeout: 30000 });
       const ms = Date.now() - t0;
       // Anything wider than the screen that isn't inside a sideways-scrolling box.
-      const bad = await page.evaluate(() => {
-        const W = window.innerWidth;
+      // Phones zoom out to fit wide pages, so compare against the real screen width, not the zoomed one.
+      const bad = await page.evaluate((W) => {
         const out = [];
         const scrolls = (el) => {
           for (let p = el.parentElement; p && p !== document.body; p = p.parentElement) {
@@ -51,11 +51,19 @@ async function run(width, height, list, dir, signedIn, shoot) {
           }
         }
         return out.slice(0, 3);
-      });
-      const pageWide = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1);
+      }, width);
+      const pageWide = await page.evaluate((W) => document.documentElement.scrollWidth > W + 1, width);
       if (bad.length || pageWide) problems.push(`${width}px ${u}: ${pageWide ? "PAGE SCROLLS SIDEWAYS; " : ""}${bad.join(" | ")}`);
       if (ms > 4000) problems.push(`${width}px ${u}: slow (${ms} ms)`);
-      if (shoot) await page.screenshot({ path: `shots/${dir}/${name(u)}.jpg`, type: "jpeg", quality: 55, fullPage: true });
+      if (shoot) {
+        // First screen (what you see on opening) and one further down, at real size.
+        await page.screenshot({ path: `shots/${dir}/${name(u)}.jpg`, type: "jpeg", quality: 60 });
+        const h = await page.evaluate(() => document.documentElement.scrollHeight);
+        if (h > height * 1.5 && width < 600) {
+          await page.evaluate((y) => window.scrollTo(0, y), height);
+          await page.screenshot({ path: `shots/${dir}/${name(u)}__2.jpg`, type: "jpeg", quality: 60 });
+        }
+      }
     } catch (e) {
       problems.push(`${width}px ${u}: ${e.message.split("\n")[0]}`);
     }
@@ -65,7 +73,7 @@ async function run(width, height, list, dir, signedIn, shoot) {
 
 await run(390, 844, pages, "phone", true, true);
 await run(390, 844, pub, "phone", false, true);
-const DESKTOP = ["/", "/deals", "/properties", "/buyers", "/dialer", "/closing", "/settings", "/recommendations", "/calls"].filter((u) => pages.includes(u) || u === "/calls");
+const DESKTOP = ["/", "/deals", "/properties", "/buyers", "/dialer", "/closing", "/settings", "/recommendations"].filter((u) => pages.includes(u));
 await run(1366, 900, [...DESKTOP, ...pages.filter((u) => /^\/deals\/[^/?]+\?tab=overview/.test(u)).slice(0, 1)], "desktop", true, true);
 await browser.close();
 

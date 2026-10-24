@@ -78,3 +78,16 @@ table.data th { text-align: left; font-size: 12px; color: var(--muted); font-wei
 table.data td { padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
 table.data tr:last-child td { border-bottom: none; }
 table.data tr.link:hover td { background: var(--soft); cursor: pointer; }
+
+/* Phone fit: the page itself never slides sideways. Grid columns may shrink (wide tables scroll
+   inside their own box instead of stretching the page), long words wrap. */
+html, body { overflow-x: clip; max-width: 100%; }
+.grid > * { min-width: 0; }
+main { min-width: 0; overflow-wrap: anywhere; }
+table.data { overflow-wrap: normal; }
+img, svg, video, iframe, canvas { max-width: 100%; }
+pre { white-space: pre-wrap; }
+
+/* Loading outlines */
+@keyframes uc-pulse { 50% { opacity: .5; } }
+.skel { background: var(--soft); border-radius: 10px; animation: uc-pulse 1.4s ease-in-out infinite; }

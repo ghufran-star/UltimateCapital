@@ -46,7 +46,7 @@ export async function verifyRetell(ws: string, raw: string, header: string | nul
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
-async function fromNumber(ws: string, state?: string | null) {
+export async function fromNumber(ws: string, state?: string | null) {
   const nums = await db.phoneNumber.findMany({ where: { workspaceId: ws } });
   return (state && nums.find((n) => n.state === state)) || nums[0] || null;
 }

@@ -9,7 +9,7 @@
 4. Side menu: Today · Sellers · Deals · Buyers · Calls · Closing · Settings (Advanced tucked away).
 5. Today screen: approvals + recommendations + tasks in one list with big buttons (Approve, Call, Send offer, Fee received).
 6. One deal page: progress bar + one "next step" button; plain words ("Most we'll pay" not "max buy").
-7. Call buttons wherever a call is needed + a dialer screen.
+7. Call from inside the app (browser/phone, no handset needed) wherever a call is needed + a dialer screen with a priority call list. Team calls recorded and transcribed; after each call, one-tap outcome buttons (Interested, Call back, Not now, Price too high, Not interested, Wrong number).
 8. Guided first-time setup.
 
 ## Stage 3 — Business rules and data
@@ -20,13 +20,16 @@
 13. Agents: 7 → 3 (seller caller with stages, buyer caller, receptionist).
 
 ## Stage 4 — Automation
-14. Follow-up tracks: no answer, not now, price too high, listed with agent, callback, deadline-driven, quiet buyers.
+14. Follow-up tracks: no answer, not now, price too high, listed with agent, callback, deadline-driven, quiet buyers. Chosen by the same single AI read that already runs on every conversation (no extra AI cost), by simple rules where there's no conversation (no answer, voicemail), or by the outcome button. Reason shown; you can move anyone by hand.
+14b. Speed to lead: form sign-ups and replies get a call or text within a minute.
+14c. Text and email templates with A/B testing of first messages (reply rates per template).
+14d. Monday scorecard by text/email: deals, spend, fees, best list.
 15. "Fee received" button (amount + date) updates everything. Bank feed and CSV upload removed.
 16. Deal email setup guide.
 17. Cost per deal by list and county.
 
 ## Stage 5 — Spend less on AI
-18. Prompt caching. 19. Skip AI on empty messages. 20. Batch non-urgent AI work. 21. Call quality checks on a sample. 22. Monthly AI budget with a meter.
+18. Prompt caching. 19. Skip AI on empty messages. 20. Batch non-urgent AI work. 21. Call quality checks on a sample. 22. Monthly AI budget with a meter. 22b. Team-call transcription on by default (cheap speech-to-text), switchable off.
 
 ## Stage 6 — Compliance controls (owner decides)
 23. Switches: AI says it's an AI (on/off), recording notice (on/off), per state if wanted. Logged.

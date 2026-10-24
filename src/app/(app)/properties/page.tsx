@@ -5,6 +5,7 @@ import { ActionButton } from "@/components/client";
 import type { Prisma } from "@prisma/client";
 import { RowLink } from "@/components/client";
 import { CallButton } from "@/components/phone";
+import { Filters } from "@/components/filters";
 import { Combo } from "@/components/combo";
 import { Card, Empty, MoreMenu, PageHeader, StatusBadge, Tabs } from "@/components/ui";
 import { conditionShort, label as catLabel, LEAD_SOURCES, OCCUPANCY, OWNER_TYPES, PROPERTY_TYPES, SITUATIONS, shortType, US_STATES } from "@/lib/catalog";
@@ -96,7 +97,8 @@ export default async function Sellers({ searchParams }: { searchParams: Promise<
         }
       />
       <Tabs active={tab} tabs={[{ key: "sellers", label: "Sellers", href: keep({ tab: "sellers" }), count: counts[0] }, { key: "properties", label: "Properties", href: keep({ tab: "properties" }), count: counts[1] }]} />
-      <form className="mb-4 flex flex-wrap gap-2">
+      <Filters active={[q, sp.state, sp.type, sp.situation].filter(Boolean).length}>
+      <form className="flex flex-wrap gap-2">
         <input type="hidden" name="tab" value={tab} />
         <input name="q" defaultValue={q} placeholder={tab === "sellers" ? "Search name, phone, email" : "Search address, city, ZIP, county"} className="field w-full sm:max-w-xs" />
         <Combo name="state" options={US_STATES} defaultValue={sp.state} emptyLabel="All states" placeholder="All states" className="min-w-0 flex-1 sm:w-48 sm:flex-none" />
@@ -104,6 +106,7 @@ export default async function Sellers({ searchParams }: { searchParams: Promise<
         <Combo name="situation" options={SITUATIONS} defaultValue={sp.situation} emptyLabel="Any situation" placeholder="Any situation" className="w-full sm:w-56" />
         <button className="btn btn-ghost">Filter</button>
       </form>
+      </Filters>
       {tab === "sellers" && sellers.length > 0 && (
         <div className="space-y-2 md:hidden">
           {sellers.slice(0, 200).map((s) => {

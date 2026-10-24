@@ -10,6 +10,7 @@ import { can, dealScope, pageCtx } from "@/lib/session";
 import { ago, usd } from "@/lib/util";
 import { activeRuleSet } from "@/lib/valuation";
 import { bulkDealsAction, dealColumnsAction, pitchDealAction } from "../../actions/deals";
+import { Filters } from "@/components/filters";
 import { BulkIdsClient, SelectAll } from "./bulk";
 
 const VIEWS: Record<string, { label: string; stages?: string[] }> = {
@@ -142,7 +143,8 @@ export default async function Deals({ searchParams }: { searchParams: Promise<SP
         }
       />
       <Tabs active={view} tabs={Object.entries(VIEWS).map(([k, v]) => ({ key: k, label: v.label, href: `/deals?view=${k}` }))} />
-      <div className="mb-4 flex flex-wrap items-start gap-2">
+      <Filters active={[q, sp.state].filter(Boolean).length}>
+      <div className="flex flex-wrap items-start gap-2">
         <form className="flex flex-1 flex-wrap gap-2">
           <input type="hidden" name="view" value={view === "custom" ? "all" : view} />
           <input name="q" defaultValue={q} placeholder="Search address, city or ZIP" className="field min-w-0 flex-1 sm:max-w-xs" />
@@ -164,6 +166,7 @@ export default async function Deals({ searchParams }: { searchParams: Promise<SP
           </form>
         </details>
       </div>
+      </Filters>
 
       {writable && rows.length > 0 && (
         <ActionForm action={bulkDealsAction} className="mb-3 hidden flex-wrap items-center gap-2 rounded-xl bg-soft px-3 py-2 text-sm md:flex">

@@ -115,7 +115,7 @@ async function Tasks({ ws, who, writable, userId }: { ws: string; who: string; w
                     )}
                     {t.result && <div className="text-xs text-warn">{t.result}</div>}
                   </div>
-                  <div className="flex items-center gap-1">
+                  <div className="flex max-w-full flex-wrap items-center gap-1">
                     <StatusBadge s={t.status} />
                     {writable && (
                       <>
@@ -128,9 +128,9 @@ async function Tasks({ ws, who, writable, userId }: { ws: string; who: string; w
                         <ActionButton action={taskAction} hidden={{ taskId: t.id, what: "cancel" }}>
                           ✕
                         </ActionButton>
-                        <ActionForm action={assignTaskAction} className="flex items-center gap-1">
+                        <ActionForm action={assignTaskAction} className="flex max-w-full items-center gap-1">
                           <input type="hidden" name="taskId" value={t.id} />
-                          <select name="assignee" defaultValue={t.assignee ?? ""} className="rounded-md border border-line bg-card px-1 py-1 text-xs">
+                          <select name="assignee" defaultValue={t.assignee ?? ""} className="max-w-40 rounded-md border border-line bg-card px-1 py-1 text-xs">
                             <option value="">Unassigned</option>
                             {members.map((m) => (
                               <option key={m.userId} value={m.userId}>

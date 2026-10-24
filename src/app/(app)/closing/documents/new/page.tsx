@@ -25,7 +25,7 @@ export default async function NewDocument({ searchParams }: { searchParams: Prom
             <Field label="PDF">
               <input type="file" name="file" accept="application/pdf" className="field" required />
             </Field>
-            <Field label="Link to a deal (optional)" hint="Linked documents show on the deal's Contracts tab.">
+            <Field label="Link to a deal (optional)" hint="Linked documents show on the deal's Paperwork tab.">
               <Combo name="opportunityId" options={deals.map((d) => ({ key: d.id, label: `${d.property.address}, ${d.property.city} ${d.property.state}` }))} defaultValue={sp.deal} emptyLabel="No deal" placeholder="Search deals" />
             </Field>
             <Submit pendingText="Uploading…">Next: place the boxes</Submit>

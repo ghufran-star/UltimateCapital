@@ -98,6 +98,21 @@ async function main() {
     const blocked = await comms.sendSms(ws, { contactId: target!.id, body: "should not send", skipChecks: true });
     if (!/^Blocked/.test(blocked)) fail("demo record contacted outside demo work");
     console.log("demo stand-ins ok");
+    // One-tap outcomes book the right follow-up for a person (never an AI call).
+    const { applyCallOutcome } = await import("../src/lib/outcomes");
+    await applyCallOutcome(ws, user.id, { contactId: target!.id, outcome: "callback", note: "Smoke: call back tomorrow" });
+    const fu = await db.task.findFirst({ where: { workspaceId: ws, contactId: target!.id, kind: "follow_up", status: "open" } });
+    if (!fu) fail("callback outcome didn't book a follow-up");
+    await applyCallOutcome(ws, user.id, { contactId: target!.id, outcome: "price_high" });
+    // Fee received closes a closing deal.
+    const closing = await db.opportunity.findFirst({ where: { workspaceId: ws, stage: "CLOSING" } });
+    if (closing) {
+      const { markFeeReceived } = await import("../src/lib/fees");
+      await markFeeReceived(ws, closing.id, 12345, new Date(), user.id);
+      const after = await db.opportunity.findUniqueOrThrow({ where: { id: closing.id }, include: { transaction: true } });
+      if (after.stage !== "CLOSED" || after.transaction?.netProceeds !== 12345) fail("fee received didn't close the deal");
+    }
+    console.log("outcomes and fee received ok");
   }
 
   // Pricing locks: every buyer price respects the deal's own resolved minimum fee.

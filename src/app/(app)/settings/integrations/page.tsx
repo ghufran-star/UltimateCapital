@@ -23,8 +23,8 @@ export default async function Integrations() {
   ];
   return (
     <div className="max-w-3xl space-y-5">
-      <PageHeader back={{ href: "/settings", label: "Settings" }} title="Integrations" sub="Keys are encrypted in your database. Leave a secret blank to keep it." />
-      {c.workspace.isDemo && <Notice tone="info">Demo: every connection here is pretend and always connected. Calls, texts, email, AI, data lookups and DNC checks all work through built-in stand-ins, and nothing reaches a real person or a paid service. Switch to your real account to add real keys.</Notice>}
+      <PageHeader back={{ href: "/settings", label: "Settings" }} title="Connections" sub="Keys are encrypted in your database. Leave a secret blank to keep it." />
+      {c.workspace.isDemo && <Notice tone="info">Test mode: every connection here is pretend and always connected. Calls, texts, email, AI, data lookups and DNC checks all work through built-in stand-ins, and nothing reaches a real person or a paid service. Switch to your real account to add real keys.</Notice>}
       <ActionForm action={saveSettingsAction} className="space-y-5">
         {groups.map((g) => (
           <Card key={g} title={g}>

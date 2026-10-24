@@ -1,4 +1,4 @@
-# Next batch (agreed 24 Oct 2026 — waiting for "go")
+# Batch agreed 24 Oct 2026 — all 17 items done and live (CI green)
 
 1. Searchable dropdowns with full built-in option lists: state, deal type, property type and other fixed choices, everywhere (templates, title companies, deals, buy boxes, campaigns, rule variations).
 2. US real-estate taxonomy and terminology across the app (researched from MLS/RESO standards and wholesaling platforms such as PropStream, BatchLeads, InvestorLift): property types (single-family, duplex, triplex, fourplex, 5+ multifamily, condo, townhouse, manufactured with/without land, land, mixed-use, commercial…), seller situations (pre-foreclosure, probate, tax delinquent, absentee owner, vacant, tired landlord, code violations, divorce…), lead sources, deal and closing terms.

@@ -28,7 +28,7 @@ type Intel = {
     preferredChannel?: string;
     maxDealsPerMonth?: number;
   };
-  seller: { askingPrice?: number; lowestPrice?: number; motivation?: string; timeline?: string; decisionMakers?: string; interested?: "yes" | "no" | "maybe" };
+  seller: { askingPrice?: number; lowestPrice?: number; agreedPrice?: number; motivation?: string; timeline?: string; decisionMakers?: string; interested?: "yes" | "no" | "maybe" };
   property: {
     beds?: number;
     baths?: number;
@@ -102,6 +102,7 @@ const SCHEMA = {
       properties: {
         askingPrice: { type: "number" },
         lowestPrice: { type: "number", description: "Lowest price they indicated they'd accept" },
+        agreedPrice: { type: "number", description: "Only if the seller clearly said yes to a specific price WE offered in this conversation (a verbal agreement). Leave out if they only named their own number or were unsure." },
         motivation: { type: "string" },
         timeline: { type: "string" },
         decisionMakers: { type: "string" },
@@ -301,6 +302,11 @@ Rules:
     if (s.motivation && s.timeline) target = "QUALIFIED";
     if (p.itemTiers?.length || p.conditionTier) target = "PROPERTY_DISCOVERY";
     if (target && STAGE_INDEX(target) > STAGE_INDEX(opp.stage) && STAGE_INDEX(opp.stage) < STAGE_INDEX("UNDERWRITING")) oppData.stage = target;
+    // A verbal yes to our number: follow up with the written offer letter (or ask the owner first).
+    if (s.agreedPrice && s.agreedPrice > 1000 && it.channel === "call" && s.interested !== "no") {
+      oppData.sellerLowest = Math.min(Math.round(s.agreedPrice), (oppData.sellerLowest as number) || Infinity, opp.sellerLowest || Infinity);
+      await createTask(ws, { kind: "offer_letter", title: `Send the written offer at ${Math.round(s.agreedPrice).toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 })}`, entityType: "opportunity", entityId: opp.id, payload: { price: Math.round(s.agreedPrice), interactionId: it.id }, dueAt: new Date(Date.now() + 60_000), dedupeKey: `letter:${opp.id}:${Math.round(s.agreedPrice)}` });
+    }
     if (Object.keys(oppData).length) {
       await db.opportunity.update({ where: { id: opp.id }, data: oppData as Prisma.OpportunityUpdateInput });
       await audit(ws, actor, "opportunity_updated", { type: "opportunity", id: opp.id }, { after: oppData, meta: { interactionId: it.id } });

@@ -114,11 +114,34 @@ async function main() {
   const k = await db.contract.findFirstOrThrow({ where: { workspaceId: ws, status: "sent" }, include: { signers: true } });
   await db.contractSigner.update({ where: { id: k.signers.find((s) => s.role !== "company")!.id }, data: { tokenHash: sha(signToken) } });
 
+  // Offer letters: render, "send" (the demo blocks delivery), and the seller's ready / counter buttons.
+  const { letterDefaults, sendOfferLetter, sellerReady, sellerCounter, offerByToken } = await import("../src/lib/offerletter");
+  const letterDeals = await db.opportunity.findMany({ where: { workspaceId: ws, sellerId: { not: null }, valuations: { some: { blocked: false } } }, take: 2 });
+  const offerTokens: string[] = [];
+  for (const d of letterDeals) {
+    const f = await letterDefaults(ws, d.id, undefined, { name: "Smoke Test", email: "smoke@example.com", phone: "+12105550100" });
+    f.note = "Smoke test – “quotes”, dashes — and a long line ".repeat(8);
+    const r = await sendOfferLetter(ws, { opportunityId: d.id, fields: f, actor: user.id, channels: ["email", "sms"], authority: "manual" });
+    const o = await db.offer.findUniqueOrThrow({ where: { id: r.offerId } });
+    if (!o.pdf || o.pdf.length < 1000) fail("offer letter PDF not rendered");
+    offerTokens.push(o.token!);
+    urls.push(`/api/offers/${o.id}/pdf`, `/api/offers/preview/${d.id}?price=123456&note=Hello&closingDays=14&asIs=on&letterForm=1`);
+  }
+  if (offerTokens[0]) {
+    await sellerReady(offerTokens[0], "Smoke: ready");
+    const o = await offerByToken(offerTokens[0]);
+    if (o?.status !== "accepted") fail("seller ready didn't mark the offer accepted");
+    const d = await db.opportunity.findUniqueOrThrow({ where: { id: o!.opportunityId } });
+    if (d.stage !== "CONTRACT_PREPARATION" || d.contractPrice !== o!.price) fail("seller ready didn't move the deal to contract preparation");
+  }
+  if (offerTokens[1]) await sellerCounter(offerTokens[1], 199000, "Smoke: can you do 199k?");
+  console.log(`offer letters ok (${offerTokens.length})`);
+
   writeFileSync("smoke-demo-cookie.txt", demoToken);
   writeFileSync("smoke-real-cookie.txt", realToken);
   writeFileSync("smoke-urls.txt", urls.join("\n") + "\n");
   const portal = await db.buyerInterest.findMany({ where: { portalToken: { not: null }, opportunity: { workspaceId: ws } }, take: 4, select: { portalToken: true } });
-  writeFileSync("smoke-public-urls.txt", [...portal.map((x) => `/d/${x.portalToken}`), "/d/not-a-real-token-xxxxxxx", "/a/expired-token-xxxxxxxx", `/sign/${signToken}`, "/sign/expired-token", "/login", "/api/health"].join("\n") + "\n");
+  writeFileSync("smoke-public-urls.txt", [...portal.map((x) => `/d/${x.portalToken}`), "/d/not-a-real-token-xxxxxxx", "/a/expired-token-xxxxxxxx", `/sign/${signToken}`, "/sign/expired-token", ...offerTokens.flatMap((t) => [`/offer/${t}`, `/offer/${t}?preview=1`, `/api/offer/${t}/pdf`]), "/offer/not-a-real-offer-token", "/login", "/api/health"].join("\n") + "\n");
   console.log(`${urls.length} pages to crawl`);
   await db.$disconnect();
 }

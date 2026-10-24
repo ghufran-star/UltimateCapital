@@ -13,11 +13,12 @@ export type Autonomy = {
   demandCheck: "auto" | "ask"; // anonymous buyer check when the seller is near agreement
   fullMarketing: "auto" | "ask"; // marketing to buyers once under contract
   sendSellerContract: "auto" | "manual"; // after you approve the final offer, draft and send the contract
+  offerLetter: "auto" | "ask" | "off"; // written offer letter after the seller verbally agrees a number on a call
   dailySpendCap: number | null; // calls + texts per day, all campaigns
   approvalTexts: boolean; // text approval links to owners/admins with a phone
 };
 
-export const DEFAULT_AUTONOMY: Autonomy = { emdAutoUnder: 0, paymentAutoUnder: 0, demandCheck: "auto", fullMarketing: "auto", sendSellerContract: "manual", dailySpendCap: null, approvalTexts: true };
+export const DEFAULT_AUTONOMY: Autonomy = { emdAutoUnder: 0, paymentAutoUnder: 0, demandCheck: "auto", fullMarketing: "auto", sendSellerContract: "manual", offerLetter: "auto", dailySpendCap: null, approvalTexts: true };
 
 const KEY = "AUTONOMY";
 

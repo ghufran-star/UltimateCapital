@@ -103,7 +103,13 @@ export default async function Controls() {
                 <option value="auto">Draft and send the contract automatically</option>
               </select>
             </Field>
-            <div />
+            <Field label="When a seller verbally agrees a price on a call" hint="Within your max buy only; above it always goes to Approvals.">
+              <select name="offerLetter" defaultValue={a.offerLetter} className="field" disabled={!owner}>
+                <option value="auto">Send the written offer letter automatically</option>
+                <option value="ask">Ask me before sending the letter</option>
+                <option value="off">Don&apos;t send a letter</option>
+              </select>
+            </Field>
             <Field label="Approve earnest money automatically up to ($)" hint="0 = always ask. Wire verification is still required.">
               <input name="emdAutoUnder" defaultValue={a.emdAutoUnder} className="field tnum" inputMode="numeric" disabled={!owner} />
             </Field>

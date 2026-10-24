@@ -549,6 +549,18 @@ model Offer {
   status        String   @default("proposed") // proposed | countered | accepted | rejected | withdrawn
   response      String?
   createdAt     DateTime @default(now())
+  // Written offer letter (seller offers): a PDF, a private link, and what the seller did with it.
+  token         String?   @unique
+  letter        Json? // the letter's fields as sent
+  pdf           Bytes?
+  sentAt        DateTime?
+  sentVia       String[]  @default([])
+  viewedAt      DateTime?
+  viewCount     Int       @default(0)
+  respondedAt   DateTime?
+  expiresAt     DateTime?
+  auto          Boolean   @default(false) // sent by the system after a verbal agreement
+  interactionId String? // the call where the number was agreed
 
   opportunity Opportunity @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
 }

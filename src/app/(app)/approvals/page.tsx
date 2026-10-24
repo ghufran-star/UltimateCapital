@@ -15,6 +15,7 @@ const KIND_HELP: Record<string, string> = {
   offer_over_limit: "The agent was asked to go above its authority. Enter a price to authorise it.",
   agent_request: "An agent asked for a decision it isn't allowed to make.",
   price_below_floor: "A buyer offered below the floor price.",
+  offer_letter: "The seller agreed a number on a call. Approve to email the written offer letter (PDF) and text them the link.",
 };
 
 export default async function Approvals({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
@@ -94,14 +95,14 @@ export default async function Approvals({ searchParams }: { searchParams: Promis
                       <ActionForm action={decideApprovalAction}>
                         <input type="hidden" name="approvalId" value={a.id} />
                         <input type="hidden" name="decision" value="approved" />
-                        {["final_offer", "offer_over_limit", "agent_request", "price_below_floor"].includes(a.kind) && (
+                        {["final_offer", "offer_over_limit", "agent_request", "price_below_floor", "offer_letter"].includes(a.kind) && (
                           <label className="block space-y-1 text-sm">
                             <span className="font-medium">Approved price</span>
                             <input name="price" className="field tnum" inputMode="numeric" defaultValue={Number(d.proposedPrice || d.price || opp?.sellerLowest || calc?.maxBuy || 0) || ""} />
                           </label>
                         )}
                         {impacts[a.id] && <p className={`text-xs ${impacts[a.id]!.over > 0 ? "text-bad" : "text-muted"}`}>{impacts[a.id]!.text}</p>}
-                        {["final_offer", "offer_over_limit", "agent_request", "price_below_floor"].includes(a.kind) && (
+                        {["final_offer", "offer_over_limit", "agent_request", "price_below_floor", "offer_letter"].includes(a.kind) && (
                           <label className="flex items-start gap-2 text-xs text-muted">
                             <input type="checkbox" name="overLock" className="mt-0.5" /> Approve above the max buy if the price is over it (only needed when it is)
                           </label>

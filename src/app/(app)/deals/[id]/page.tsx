@@ -10,6 +10,8 @@ import { activePack } from "@/lib/eligibility";
 import { nearAgreement, resolveParams, type Calculation } from "@/lib/rules";
 import { can, dealScope, pageCtx } from "@/lib/session";
 import { SELLER_EXCEPTIONS, SELLER_STAGES, label } from "@/lib/stages";
+import { letterDefaults } from "@/lib/offerletter";
+import { OfferLetterForm } from "./offerletter";
 import { ago, fmtDate, fullName, usd } from "@/lib/util";
 import { activeRuleSet } from "@/lib/valuation";
 import { verificationPackAction } from "../../../actions/ops";
@@ -45,6 +47,8 @@ export default async function DealPage({ params, searchParams }: { params: Promi
   const pendingApprovals = await db.approval.findMany({ where: { workspaceId: ws, entityId: opp.id, status: "pending" } });
   const writable = !c.workspace.isDemo && can(c.role, "deals");
   const sellerOffers = opp.offers.filter((o) => o.side === "seller");
+  const me = writable && seller && tab === "overview" ? await db.user.findUnique({ where: { id: c.user.id }, select: { phone: true } }) : null;
+  const letter = writable && seller && tab === "overview" ? await letterDefaults(ws, opp.id, undefined, { name: c.user.name, email: c.user.email, phone: me?.phone }) : null;
   const counts = { buyers: opp.interests.length, contracts: opp.contracts.length };
 
   const tabs = [
@@ -110,26 +114,56 @@ export default async function DealPage({ params, searchParams }: { params: Promi
                     ) : null}
                   </div>
                   {sellerOffers.length > 0 && (
-                    <table className="data">
-                      <thead>
-                        <tr>
-                          <th>When</th>
-                          <th>Who</th>
-                          <th className="text-right">Price</th>
-                          <th>Authority</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {sellerOffers.map((o) => (
-                          <tr key={o.id}>
-                            <td className="text-xs text-muted">{fmtDate(o.createdAt, true)}</td>
-                            <td>{o.by === "us" ? "Our offer" : "Seller"}</td>
-                            <td className="text-right tnum">{usd(o.price)}</td>
-                            <td className="text-xs">{o.authority || o.response || ""}</td>
+                    <div id="offers" className="scroll-mt-20 overflow-x-auto">
+                      <table className="data">
+                        <thead>
+                          <tr>
+                            <th>When</th>
+                            <th>Who</th>
+                            <th className="text-right">Price</th>
+                            <th>Authority</th>
+                            <th>Offer letter</th>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                        </thead>
+                        <tbody>
+                          {sellerOffers.map((o) => (
+                            <tr key={o.id}>
+                              <td className="text-xs text-muted">{fmtDate(o.createdAt, true)}</td>
+                              <td>{o.by === "us" ? "Our offer" : "Seller"}</td>
+                              <td className="text-right tnum">{usd(o.price)}</td>
+                              <td className="text-xs">
+                                {o.authority ? label(o.authority) : ""}
+                                {o.response ? <div className="text-muted">“{o.response.slice(0, 120)}”</div> : null}
+                              </td>
+                              <td className="text-xs">
+                                {o.token ? (
+                                  <div className="space-y-0.5">
+                                    <div>
+                                      {o.status === "accepted" ? <span className="badge badge-good">Ready to proceed</span> : o.status === "countered" ? <span className="badge badge-warn">Countered</span> : o.viewedAt ? <span className="badge">Opened {o.viewCount}×</span> : o.sentAt ? <span className="badge">Sent, not opened</span> : <span className="badge badge-bad">Not delivered</span>}
+                                      {o.auto && <span className="ml-1 text-muted">auto</span>}
+                                    </div>
+                                    <div className="text-muted">
+                                      {o.sentVia.join(" + ") || "—"}
+                                      {o.viewedAt ? ` · first opened ${fmtDate(o.viewedAt, true)}` : ""}
+                                    </div>
+                                    <div className="flex gap-2">
+                                      <a href={`/api/offers/${o.id}/pdf`} target="_blank" className="underline">
+                                        PDF
+                                      </a>
+                                      <a href={`/offer/${o.token}?preview=1`} target="_blank" className="underline">
+                                        Seller&apos;s page
+                                      </a>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  "—"
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
                   )}
                   {writable && (
                     <div className="flex flex-wrap items-end gap-2">
@@ -157,7 +191,11 @@ export default async function DealPage({ params, searchParams }: { params: Promi
             {writable && seller && (
               <section id="make-offer" className="scroll-mt-20">
                 <Card title="Make an offer">
-                  <ActionForm action={makeOfferAction} resetOnOk>
+                  <div className="mb-3 text-xs text-muted">{calc ? `Your rules: 1st ${usd(calc.sellerOffers[0])}, 2nd ${usd(calc.sellerOffers[1] ?? calc.maxBuy)}, max buy ${usd(calc.maxBuy)} (locked: going over needs the owner).` : "No valuation yet: the price isn't checked against your rules."}</div>
+                  <OfferLetterForm opportunityId={opp.id} d={letter!} canOverride={["owner", "admin"].includes(c.role)} hasEmail={!!seller.email} hasPhone={!!seller.phone} />
+                  <details className="mt-4 border-t border-line pt-3">
+                    <summary className="cursor-pointer text-sm font-medium">Or record a price / send a quick message instead of a letter</summary>
+                  <ActionForm action={makeOfferAction} resetOnOk className="mt-3 space-y-3">
                     <input type="hidden" name="opportunityId" value={opp.id} />
                     <div className="grid gap-3 md:grid-cols-2">
                       <L label="Offer price">
@@ -183,8 +221,9 @@ export default async function DealPage({ params, searchParams }: { params: Promi
                         </label>
                       )}
                     </div>
-                    <Submit>Record and send offer</Submit>
+                    <Submit className="btn btn-ghost">Record and send offer</Submit>
                   </ActionForm>
+                  </details>
                 </Card>
               </section>
             )}

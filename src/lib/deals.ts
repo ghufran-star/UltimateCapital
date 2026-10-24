@@ -15,7 +15,7 @@ export async function setStage(ws: string, opportunityId: string, stage: string,
   await audit(ws, actor, "stage_changed", { type: "opportunity", id: opportunityId }, { before: { stage: before.stage, exception: before.exception }, after: { stage, exception } });
 }
 
-async function calcFor(opportunityId: string) {
+export async function calcFor(opportunityId: string) {
   const v = await latestValuation(opportunityId);
   if (!v || v.blocked) return { v, calc: null as Calculation | null };
   return { v, calc: v.result as unknown as Calculation };
@@ -190,7 +190,7 @@ export async function priceImpact(ws: string, opportunityId: string, price: numb
 export async function decideApproval(ws: string, approvalId: string, decision: "approved" | "rejected", userId: string, note?: string, price?: number | null, overLock = false) {
   const ap = await db.approval.findUniqueOrThrow({ where: { id: approvalId } });
   if (ap.workspaceId !== ws || ap.status !== "pending") throw new Error("This approval isn't pending.");
-  if (decision === "approved" && ap.entityType === "opportunity" && ["final_offer", "offer_over_limit", "agent_request"].includes(ap.kind) && ap.requestedBy !== "agent:disposition") {
+  if (decision === "approved" && ap.entityType === "opportunity" && ["final_offer", "offer_over_limit", "agent_request", "offer_letter"].includes(ap.kind) && ap.requestedBy !== "agent:disposition") {
     const d0 = (ap.detail || {}) as Record<string, unknown>;
     const p0 = price || (d0.proposedPrice as number) || (d0.price as number) || null;
     if (p0) {
@@ -257,6 +257,17 @@ export async function decideApproval(ws: string, approvalId: string, decision: "
       const p = price || (d.price as number) || null;
       if (p && cid) await db.offer.create({ data: { opportunityId: ap.entityId, side: "buyer", contactId: cid, round: 97, price: p, by: "us", authority: "approved" } });
       await db.opportunity.update({ where: { id: ap.entityId }, data: { exception: null } }).catch(() => null);
+      break;
+    }
+    case "offer_letter": {
+      const p = price || (d.price as number);
+      if (p) {
+        const { letterDefaults, sendOfferLetter } = await import("./offerletter");
+        const u = await db.user.findUnique({ where: { id: userId } });
+        const fields = await letterDefaults(ws, ap.entityId, p, u ? { name: u.name, email: u.email, phone: u.phone } : undefined);
+        const r = await sendOfferLetter(ws, { opportunityId: ap.entityId, fields, actor: userId, channels: ["email", "sms"], auto: true, interactionId: (d.interactionId as string) || undefined, authority: "approved" });
+        await notify(ws, "Offer letter sent", r.message, `/deals/${ap.entityId}#offers`);
+      }
       break;
     }
     case "agent_request":

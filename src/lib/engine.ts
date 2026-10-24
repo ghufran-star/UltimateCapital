@@ -93,6 +93,7 @@ export const AUTO_TASKS = new Set([
   "dnc_scrub",
   "number_check",
   "transcribe_call",
+  "offer_letter",
   "contract_reminder",
   "ai_reply",
   "photo_repairs",
@@ -256,6 +257,8 @@ export async function executeTask(t: { id: string; workspaceId: string; kind: st
       return (await import("./contracts")).signingReminder(ws, t.entityId!);
     case "number_check":
       return (await import("./numbers")).checkNumbers(ws, ((p.contactIds as string[]) || []).slice(0, 500), { paid: p.paid === undefined ? undefined : Boolean(p.paid) });
+    case "offer_letter":
+      return (await import("./offerletter")).letterAfterVerbal(ws, t.entityId!, Number(p.price), String(p.interactionId || ""));
     case "transcribe_call":
       return (await import("./transcribe")).transcribeInteraction(ws, t.entityId!);
     case "dnc_scrub":

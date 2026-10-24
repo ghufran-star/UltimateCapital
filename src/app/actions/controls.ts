@@ -35,6 +35,7 @@ export async function autonomyAction(_: ActionState, fd: FormData): Promise<Acti
       demandCheck: fd.get("demandCheck") === "ask" ? "ask" : "auto",
       fullMarketing: fd.get("fullMarketing") === "ask" ? "ask" : "auto",
       sendSellerContract: fd.get("sendSellerContract") === "auto" ? "auto" : "manual",
+      offerLetter: fd.get("offerLetter") === "ask" ? "ask" : fd.get("offerLetter") === "off" ? "off" : "auto",
       dailySpendCap: int(fd.get("dailySpendCap")) || null,
       approvalTexts: fd.get("approvalTexts") === "on",
     };

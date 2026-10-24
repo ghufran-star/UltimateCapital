@@ -791,6 +791,7 @@ async function seed(ws: string, ownerId: string) {
     const anonymous = ["NEGOTIATION"].includes(d.stage) && (d.tag === "near" || d.tag === "near_hot");
     const full = atLeast(d.stage, "UNDER_CONTRACT") && d.tag !== "terminated";
     if (!anonymous && !full && !(d.stage === "OFFER_READY" || d.stage === "NEGOTIATION")) continue;
+    if (!d.calc) continue;
     const ms = await matchesFor(d);
     // If the sample buyers don't happen to fit, take the closest same-market buyers so every later-stage deal has demand to show.
     let list = ms;

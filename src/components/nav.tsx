@@ -18,6 +18,7 @@ const P = {
   more: "M5 12h.01M12 12h.01M19 12h.01",
   phone: "M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 1.9.7 2.8a2 2 0 0 1-.5 2.1L8 9.9a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.8.7a2 2 0 0 1 1.7 2z",
   chart: "M4 20V10M10 20V4M16 20v-7M22 20H2",
+  spark: "M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8zM19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z",
   bell: "M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9M10.3 21a1.9 1.9 0 0 0 3.4 0",
 };
 
@@ -25,6 +26,7 @@ export const NAV = [
   { href: "/", label: "Command Centre", icon: P.home },
   { href: "/approvals", label: "Approvals", icon: P.check, badge: "approvals" },
   { href: "/deals", label: "Deals", icon: P.deals },
+  { href: "/recommendations", label: "AI recommendations", icon: P.spark },
   { href: "/properties", label: "Sellers & Properties", icon: P.house },
   { href: "/buyers", label: "Buyers", icon: P.users },
   { href: "/campaigns", label: "Campaigns", icon: P.megaphone },

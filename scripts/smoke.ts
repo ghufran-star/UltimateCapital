@@ -97,6 +97,7 @@ async function main() {
   urls.push("/agents", "/agents?days=7", "/agents/team", "/closing/documents", "/closing/documents/new");
   for (const r of ["seller_acquisition", "property_discovery", "negotiation", "buyer_acquisition", "disposition", "receptionist", "transaction"]) urls.push(`/agents/${r}`, `/agents/${r}?outcome=positive&flagged=1`);
   for (const t of ["deals", "sellers", "properties", "buyers", "calls", "messages", "payments", "tasks", "title-companies", "audit"]) urls.push(`/api/export/${t}`);
+  urls.push("/recommendations", "/recommendations?tab=hot", "/recommendations?tab=investors", "/recommendations?tab=learned", "/recommendations?mine=1");
   urls.push("/closing/title", "/closing/title/new", "/closing/title?cap=assignments&state=TX", "/closing/title/directory", "/closing/title/directory?state=GA", "/closing/title/directory?state=TX&q=title&county=Harris");
   for (const t of await db.titleCompany.findMany({ where: { workspaceId: ws } })) urls.push(`/closing/title/${t.id}`);
   for (const p of await db.statePack.findMany({ where: { workspaceId: ws } })) urls.push(`/settings/states/${p.state}`);

@@ -932,3 +932,25 @@ model AgentVersion {
 
   @@index([agentId, version])
 }
+
+// AI recommendations people acted on or dismissed (and AI second opinions), with how the deal turned out.
+model Recommendation {
+  id            String    @id @default(cuid())
+  workspaceId   String
+  key           String // opportunityId:action:price
+  opportunityId String
+  action        String // sign | negotiate | first_offer | pass | value | push_buyers
+  price         Int?
+  source        String    @default("rules") // rules | ai
+  reasons       String[]  @default([])
+  status        String    @default("open") // open | acted | dismissed
+  taken         String? // what was done: offer_letter | call | pitch | pass | valuation
+  decidedBy     String?
+  decidedAt     DateTime?
+  outcome       String? // won | lost
+  outcomeAt     DateTime?
+  createdAt     DateTime  @default(now())
+
+  @@unique([workspaceId, key])
+  @@index([workspaceId, opportunityId])
+}

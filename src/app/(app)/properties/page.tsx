@@ -74,7 +74,7 @@ export default async function Sellers({ searchParams }: { searchParams: Promise<
         title="Sellers & properties"
         actions={
           <>
-            {!c.workspace.isDemo && (
+            {(
               <ActionButton action={checkNumbersAction} hidden={{ scope: "sellers" }} className="btn btn-ghost" confirm="Check every seller phone number (format and DNC-provider flags; plus a paid mobile/landline lookup if switched on in Settings)?">
                 Check numbers
               </ActionButton>

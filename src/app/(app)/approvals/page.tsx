@@ -26,7 +26,7 @@ export default async function Approvals({ searchParams }: { searchParams: Promis
   const opps = await db.opportunity.findMany({ where: { id: { in: oppIds } }, include: { property: true, valuations: { orderBy: { createdAt: "desc" }, take: 1 }, interests: { where: { serious: true }, include: { contact: true } } } });
   const users = await db.user.findMany({ where: { memberships: { some: { workspaceId: c.workspace.id } } }, select: { id: true, name: true } });
   const uname = (id?: string | null) => users.find((u) => u.id === id)?.name || id || "";
-  const canApprove = can(c.role, "approve") && !c.workspace.isDemo;
+  const canApprove = can(c.role, "approve");
   const impacts: Record<string, Awaited<ReturnType<typeof priceImpact>>> = {};
   for (const a of list.filter((x) => x.status === "pending" && x.entityType === "opportunity")) {
     const d = (a.detail || {}) as Record<string, unknown>;
@@ -118,7 +118,7 @@ export default async function Approvals({ searchParams }: { searchParams: Promis
                       </ActionForm>
                     </div>
                   ) : (
-                    <p className="text-sm text-muted">{c.workspace.isDemo ? "Demo workspace: view only." : "Only owners and admins can decide."}</p>
+                    <p className="text-sm text-muted">Only owners and admins can decide.</p>
                   ))}
               </div>
             </section>

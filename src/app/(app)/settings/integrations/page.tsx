@@ -1,12 +1,15 @@
 import { ActionButton, ActionForm, Submit } from "@/components/client";
 import { Card, Field, PageHeader } from "@/components/ui";
-import { loadSettings, mask, SETTING_DEFS } from "@/lib/config";
+import { loadSettings, mask, setting, SETTING_DEFS, type SettingKey } from "@/lib/config";
+import { Notice } from "@/components/ui";
 import { can, pageCtx } from "@/lib/session";
 import { saveSettingsAction, testIntegrationAction } from "../../../actions/settings";
 
 export default async function Integrations() {
   const c = await pageCtx();
   const s = await loadSettings(c.workspace.id, true);
+  // The demo shows its pretend (always connected) connections.
+  if (c.workspace.isDemo) for (const d of SETTING_DEFS) s[d.key] = (await setting(c.workspace.id, d.key as SettingKey)) || "";
   const groups = [...new Set(SETTING_DEFS.map((d) => d.group))];
   const ro = c.workspace.isDemo || !can(c.role, "settings");
   const base = (s.PUBLIC_URL || "https://YOUR-APP.up.railway.app").replace(/\/$/, "");
@@ -21,6 +24,7 @@ export default async function Integrations() {
   return (
     <div className="max-w-3xl space-y-5">
       <PageHeader back={{ href: "/settings", label: "Settings" }} title="Integrations" sub="Keys are encrypted in your database. Leave a secret blank to keep it." />
+      {c.workspace.isDemo && <Notice tone="info">Demo: every connection here is pretend and always connected. Calls, texts, email, AI, data lookups and DNC checks all work through built-in stand-ins, and nothing reaches a real person or a paid service. Switch to your real account to add real keys.</Notice>}
       <ActionForm action={saveSettingsAction} className="space-y-5">
         {groups.map((g) => (
           <Card key={g} title={g}>

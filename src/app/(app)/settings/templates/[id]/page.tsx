@@ -14,7 +14,7 @@ export default async function TemplatePage({ params }: { params: Promise<{ id: s
   const { id } = await params;
   const t = id === "new" ? null : await db.contractTemplate.findFirst({ where: { id, workspaceId: c.workspace.id } });
   if (id !== "new" && !t) notFound();
-  const ro = c.workspace.isDemo || !can(c.role, "contracts");
+  const ro = !can(c.role, "contracts");
   return (
     <div className="max-w-5xl space-y-5">
       <PageHeader back={{ href: "/settings/templates", label: "Contract templates" }} title={t ? t.name : "New template"} />

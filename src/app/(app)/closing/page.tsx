@@ -22,7 +22,7 @@ export default async function Closing({ searchParams }: { searchParams: Promise<
   const expected = payments.filter((p) => p.direction === "in" && ["due", "approved"].includes(p.status)).reduce((a, p) => a + p.amount, 0);
   const received = payments.filter((p) => p.direction === "in" && p.status === "received").reduce((a, p) => a + p.amount, 0);
   const outDue = payments.filter((p) => p.direction === "out" && ["due", "awaiting_approval", "approved"].includes(p.status));
-  const writable = !c.workspace.isDemo && can(c.role, "closing");
+  const writable = can(c.role, "closing");
   return (
     <div>
       <PageHeader title="Contracts & closing" sub="E-signature, title, earnest money, closing and getting paid." actions={<><Link href="/closing/documents" className="btn btn-primary">Send a PDF for signature</Link><a href="/api/export/payments" className="btn btn-ghost">Payments CSV</a><Link href="/closing/title" className="btn btn-ghost">Title companies ({titleCos.length})</Link></>} />

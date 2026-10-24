@@ -12,8 +12,8 @@ export default async function Controls() {
   const c = await pageCtx();
   const ws = c.workspace.id;
   const [pauses, a, spent] = await Promise.all([db.pause.findMany({ where: { workspaceId: ws }, orderBy: { createdAt: "desc" } }), getAutonomy(ws), spendSince(ws, new Date(Date.now() - 864e5))]);
-  const ro = c.workspace.isDemo || !can(c.role, "approve");
-  const owner = c.role === "owner" && !c.workspace.isDemo;
+  const ro = !can(c.role, "approve");
+  const owner = c.role === "owner";
   const label = (scope: string, value: string | null) => (scope === "all" ? "All outreach" : scope === "state" ? `State ${value}` : scope === "channel" ? `Channel: ${value?.replace("_", " ")}` : `Agent: ${AGENT_ROLES.find((r) => r.key === value)?.label || value}`);
   return (
     <div className="max-w-3xl space-y-5">

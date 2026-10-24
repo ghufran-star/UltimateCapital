@@ -37,7 +37,7 @@ export default async function AppSettings() {
           ))}
           <Submit className="btn btn-ghost">Save</Submit>
         </ActionForm>
-        {c.workspace.isDemo && <p className="mt-2 text-xs text-muted">The demo workspace never sends alerts.</p>}
+        {c.workspace.isDemo && <p className="mt-2 text-xs text-muted">The demo never sends push alerts to phones; your real account does.</p>}
       </Card>
       <Card title="My devices">
         {devices.length ? (

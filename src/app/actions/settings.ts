@@ -18,8 +18,15 @@ export async function saveSettingsAction(_: ActionState, fd: FormData): Promise<
   return act(async () => {
     const c = await requireCtx("settings", { write: true });
     const changed: string[] = [];
+    // In the demo every connection is a pretend one that always works; only plain preferences can change.
+    const DEMO_OK = ["COMPANY_NAME", "COST_PER_CALL_MINUTE", "COST_PER_SMS", "DNC_RECHECK_HOURS", "DNC_STRICT", "DNC_REQUIRE_CHECK", "ANALYSIS_MODEL", "FAST_MODEL"];
+    let skipped = 0;
     for (const d of SETTING_DEFS) {
       if (!fd.has(d.key)) continue;
+      if (c.workspace.isDemo && !DEMO_OK.includes(d.key)) {
+        if (String(fd.get(d.key) || "").trim()) skipped++;
+        continue;
+      }
       const v = String(fd.get(d.key) || "").trim();
       if (d.secret && !v) continue; // blank secret = keep current
       if (v === "__clear__") {
@@ -32,6 +39,7 @@ export async function saveSettingsAction(_: ActionState, fd: FormData): Promise<
     }
     await loadSettings(c.workspace.id, true);
     await audit(c.workspace.id, c.user.id, "settings_saved", undefined, { meta: { keys: changed } });
+    if (skipped) return { ok: true, message: "Saved your preferences. Connections in the demo are pretend and always connected; switch to your real account to add real keys." };
     return { ok: true, message: "Saved" };
   });
 }

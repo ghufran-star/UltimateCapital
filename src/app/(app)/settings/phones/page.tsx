@@ -11,7 +11,7 @@ export default async function Phones() {
   const c = await pageCtx();
   const ws = c.workspace.id;
   const [nums, agents, members, s] = await Promise.all([db.phoneNumber.findMany({ where: { workspaceId: ws } }), db.agent.findMany({ where: { workspaceId: ws } }), db.membership.findMany({ where: { workspaceId: ws }, include: { user: true } }), loadSettings(ws)]);
-  const ro = c.workspace.isDemo || !can(c.role, "settings");
+  const ro = !can(c.role, "settings");
   const base = (s.PUBLIC_URL || "https://YOUR-APP").replace(/\/$/, "");
   const row = (n?: (typeof nums)[number]) => (
     <ActionForm action={savePhoneAction} className="grid items-end gap-2 md:grid-cols-6" resetOnOk={!n}>

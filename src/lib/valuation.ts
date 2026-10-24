@@ -43,7 +43,7 @@ async function rentcast(ws: string, p: { address: string; city: string; state: s
     return res.json() as Promise<Record<string, unknown>>;
   };
   // Each property's comps are paid for once per 14 days; the cache is keyed by every input that changes the answer.
-  const cacheKey = `rentcast:${q.toString()}`;
+  const cacheKey = `${(await import("./democtx")).inDemo() ? "demo:" : ""}rentcast:${q.toString()}`;
   const hit = await db.apiCache.findUnique({ where: { key: cacheKey } });
   let value: Record<string, unknown>;
   let rent: Record<string, unknown> | null;

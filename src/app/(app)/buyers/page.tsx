@@ -33,7 +33,7 @@ export default async function Buyers({ searchParams }: { searchParams: Promise<{
             <Link href="/buyers/find" className="btn btn-ghost">
               Find cash buyers
             </Link>
-            {!c.workspace.isDemo && (
+            {(
               <ActionButton action={checkNumbersAction} hidden={{ scope: "buyers" }} className="btn btn-ghost" confirm="Check every buyer phone number?">
                 Check numbers
               </ActionButton>

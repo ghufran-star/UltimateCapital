@@ -103,7 +103,7 @@ export default async function Deals({ searchParams }: { searchParams: Promise<SP
       return (x > y ? 1 : x < y ? -1 : 0) * dir;
     });
   }
-  const writable = !c.workspace.isDemo && can(c.role, "deals");
+  const writable = can(c.role, "deals");
   const base = new URLSearchParams();
   if (view !== "active" && view !== "custom") base.set("view", view);
   if (sp.stage) base.set("stage", sp.stage);

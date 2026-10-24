@@ -9,7 +9,7 @@ import { autopilotAction } from "../../../actions/autopilot";
 export default async function AutopilotPage() {
   const c = await pageCtx();
   const a = await getAutopilot(c.workspace.id);
-  const ro = c.workspace.isDemo || !can(c.role, "settings");
+  const ro = !can(c.role, "settings");
   return (
     <div className="max-w-3xl space-y-5">
       <PageHeader back={{ href: "/settings", label: "Settings" }} title="Autopilot" sub="Every deal gets its next step by itself, stuck deals are flagged, and cold leads are revisited. Pauses in Controls stop all of it." />

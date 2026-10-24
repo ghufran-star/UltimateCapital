@@ -13,7 +13,7 @@ export default async function DocumentPage({ params }: { params: Promise<{ id: s
   const { id } = await params;
   const k = await db.contract.findFirst({ where: { id, workspaceId: c.workspace.id }, include: { signers: { orderBy: { order: "asc" } }, opportunity: { include: { property: true } } } });
   if (!k) notFound();
-  const writable = !c.workspace.isDemo && can(c.role, "contracts");
+  const writable = can(c.role, "contracts");
   const external = k.signers.filter((s) => s.role !== "company");
   const company = k.signers.find((s) => s.role === "company");
   const readyToCountersign = !!company && company.status !== "signed" && external.every((s) => s.status === "signed");

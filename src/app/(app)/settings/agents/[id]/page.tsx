@@ -12,7 +12,7 @@ export default async function AgentPage({ params }: { params: Promise<{ id: stri
   const { id } = await params;
   const a = await db.agent.findFirst({ where: { id, workspaceId: c.workspace.id } });
   if (!a) notFound();
-  const ro = c.workspace.isDemo || !can(c.role, "settings");
+  const ro = !can(c.role, "settings");
   const allowed = ROLE_TOOLS[a.role] || Object.keys(TOOL_DEFS);
   const [versions, sample] = await Promise.all([
     db.agentVersion.findMany({ where: { agentId: a.id }, orderBy: { version: "desc" }, take: 15 }),

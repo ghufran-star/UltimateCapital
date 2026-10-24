@@ -27,7 +27,7 @@ export default async function CampaignPage({ params }: { params: Promise<{ id: s
   const budget = (camp.settings as unknown as CampaignSettings)?.budget || null;
   const n = (s: string) => counts.find((x) => x.status === s)?._count || 0;
   const total = counts.reduce((a, x) => a + x._count, 0);
-  const writable = !c.workspace.isDemo && can(c.role, "campaigns");
+  const writable = can(c.role, "campaigns");
   return (
     <div className="space-y-5">
       {camp.status === "running" && <AutoRefresh seconds={20} />}

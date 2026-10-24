@@ -30,6 +30,17 @@ export function startWorker() {
   let lastDial = 0;
   let lastDigest = 0;
   let lastSync = 0;
+  // Build (or refresh an outdated) demo in the background, so "Try the demo" opens instantly.
+  if (process.env.DEMO_PUBLIC !== "off") {
+    setTimeout(() => {
+      void (async () => {
+        if (!(await holdLease())) return;
+        const { DEMO_USER_EMAIL } = await import("./session");
+        const u = await db.user.upsert({ where: { email: DEMO_USER_EMAIL }, create: { email: DEMO_USER_EMAIL, name: "Demo Visitor", passwordHash: "disabled", phone: "+12145550199" }, update: {} });
+        await (await import("./demo")).ensureDemoWorkspace(u.id);
+      })().catch((e) => console.error("[demo] prebuild", e instanceof Error ? e.message : e));
+    }, 20_000);
+  }
   const loop = async () => {
     while (true) {
       let worked = 0;

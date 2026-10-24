@@ -22,7 +22,7 @@ export default async function Compliance({ searchParams }: { searchParams: Promi
     db.phoneCheck.findMany({ where: { workspaceId: ws }, orderBy: { checkedAt: "desc" }, take: 25 }),
     db.phoneCheck.groupBy({ by: ["blocked"], where: { workspaceId: ws, checkedAt: { gte: new Date(Date.now() - 864e5) } }, _count: true }),
   ]);
-  const ro = c.workspace.isDemo || !can(c.role, "settings");
+  const ro = !can(c.role, "settings");
   const base = (s.PUBLIC_URL || "https://YOUR-APP").replace(/\/$/, "");
   return (
     <div className="max-w-4xl space-y-5">

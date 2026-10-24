@@ -17,7 +17,7 @@ export default async function StatePackPage({ params }: { params: Promise<{ code
   const base = draftPack(pack.state);
   const raw = pack.data as unknown as Partial<StatePackData>;
   const d: StatePackData = { ...base, ...raw, wholesaling: { ...base.wholesaling, ...raw.wholesaling }, contracts: { ...base.contracts, ...raw.contracts }, closing: { ...base.closing, ...raw.closing }, outreach: { ...base.outreach, ...raw.outreach }, sellerProtections: { ...base.sellerProtections, ...raw.sellerProtections } };
-  const ro = c.workspace.isDemo || !can(c.role, "states");
+  const ro = !can(c.role, "states");
   const isOwner = c.role === "owner";
   return (
     <div className="max-w-4xl space-y-5">

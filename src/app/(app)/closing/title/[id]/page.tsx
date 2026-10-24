@@ -21,7 +21,7 @@ export default async function TitleCompanyPage({ params }: { params: Promise<{ i
     db.transaction.findMany({ where: { workspaceId: ws, titleCompanyId: t.id }, include: { opportunity: { include: { property: true } } }, orderBy: { createdAt: "desc" }, take: 100 }),
     licenceMatch(ws, t),
   ]);
-  const ro = c.workspace.isDemo || !can(c.role, "closing");
+  const ro = !can(c.role, "closing");
   const licState = t.licenseState || t.state;
   return (
     <div className="space-y-5">

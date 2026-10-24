@@ -17,7 +17,7 @@ export default async function Dialer({ searchParams }: { searchParams: Promise<{
   const camps = await db.campaign.findMany({ where: { workspaceId: ws, status: "running", channels: { has: "human" }, ...(c.states.length ? { OR: [{ state: { in: c.states } }, { state: null }] } : {}) }, orderBy: { updatedAt: "desc" } });
   const campId = sp.campaign || camps[0]?.id;
   const camp = camps.find((x) => x.id === campId);
-  const writable = !c.workspace.isDemo && can(c.role, "calls");
+  const writable = can(c.role, "calls");
   const lead = camp ? await currentLead(ws, c.user.id, camp.id) : null;
   const due = camp ? await db.campaignMember.count({ where: { campaignId: camp.id, status: { in: ["pending", "retry"] }, lockedBy: null, OR: [{ nextAttemptAt: null }, { nextAttemptAt: { lte: new Date() } }] } }) : 0;
   const myToday = await db.interaction.count({ where: { workspaceId: ws, channel: "call", direction: "outbound", provider: { in: ["twilio", "manual"] }, createdAt: { gte: new Date(new Date().setHours(0, 0, 0, 0)) } } });

@@ -11,7 +11,9 @@ import { ensureDemoWorkspace, resetDemo } from "@/lib/demo";
 import {
   endSession,
   hashPassword,
+  DEMO_USER_EMAIL,
   HttpError,
+  isDemoUser,
   normEmail,
   passwordProblem,
   requireCtx,
@@ -66,6 +68,21 @@ export async function loginAction(_: ActionState, fd: FormData): Promise<ActionS
   });
 }
 
+/** "Try the demo" on the sign-in page: a shared demo profile that only belongs to the demo workspace. */
+export async function tryDemoAction(_: ActionState, _fd: FormData): Promise<ActionState> {
+  return act(async () => {
+    if (process.env.DEMO_PUBLIC === "off") throw new Error("The public demo is switched off.");
+    const ip = (await headers()).get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
+    const since = new Date(Date.now() - 60 * 60_000);
+    if ((await db.loginAttempt.count({ where: { key: `demo:${ip}`, createdAt: { gte: since } } })) >= 30) throw new Error("Too many demo sign-ins from here. Try again in an hour.");
+    await db.loginAttempt.create({ data: { key: `demo:${ip}` } });
+    const user = await db.user.upsert({ where: { email: DEMO_USER_EMAIL }, create: { email: DEMO_USER_EMAIL, name: "Demo Visitor", passwordHash: "disabled", phone: "+12145550199" }, update: {} });
+    const ws = await ensureDemoWorkspace(user.id);
+    await startSession(user.id, ws.id);
+    return { ok: true, redirect: "/" };
+  });
+}
+
 export async function logoutAction() {
   await endSession();
   redirect("/login");
@@ -111,6 +128,7 @@ export async function switchWorkspaceAction(_: ActionState, fd: FormData): Promi
 export async function createWorkspaceAction(_: ActionState, fd: FormData): Promise<ActionState> {
   return act(async () => {
     const c = await requireCtx();
+    if (isDemoUser(c)) throw new HttpError(403, "The demo sign-in can't create workspaces. Sign up for your own account.");
     if (!c.user.isPlatformOwner && c.role !== "owner") throw new HttpError(403, "Only owners can create workspaces.");
     const name = str(fd.get("name"));
     if (!name) throw new Error("Name the workspace.");
@@ -128,6 +146,10 @@ export async function openDemoAction(_: ActionState, fd: FormData): Promise<Acti
   return act(async () => {
     const c = await requireCtx();
     if (!c.user.isPlatformOwner && c.role !== "owner") throw new HttpError(403, "Only owners can open the demo.");
+    if (fd.get("reset") && isDemoUser(c)) {
+      const cur = await db.workspace.findFirst({ where: { isDemo: true }, select: { createdAt: true } });
+      if (cur && Date.now() - cur.createdAt.getTime() < 15 * 60_000) throw new Error("The demo was reset less than 15 minutes ago.");
+    }
     const ws = fd.get("reset") ? await resetDemo(c.user.id) : await ensureDemoWorkspace(c.user.id);
     await switchWorkspace(ws.id);
     return { ok: true, redirect: "/" };
@@ -171,6 +193,7 @@ export async function memberRoleAction(_: ActionState, fd: FormData): Promise<Ac
 export async function profileAction(_: ActionState, fd: FormData): Promise<ActionState> {
   return act(async () => {
     const c = await requireCtx();
+    if (isDemoUser(c)) throw new Error("The shared demo profile can't be changed. Sign up for your own account.");
     const data: { name?: string; phone?: string | null; passwordHash?: string } = { name: str(fd.get("name")) || c.user.name, phone: e164(str(fd.get("phone"))) };
     const next = String(fd.get("newPassword") || "");
     if (next) {

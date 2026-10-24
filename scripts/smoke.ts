@@ -69,6 +69,37 @@ async function main() {
   if (lc.ok) fail("liveCheck without provider should block cold outreach");
   console.log("compliance checks ok");
 
+  // Demo standard: everything works through stand-ins, nothing real is touched.
+  {
+    const { runDemo } = await import("../src/lib/democtx");
+    const { setting } = await import("../src/lib/config");
+    const comms = await import("../src/lib/comms");
+    if (!(await setting(ws, "RETELL_API_KEY"))?.startsWith("uc-demo-")) fail("demo should have a stand-in Retell key");
+    if (await setting(real.id, "RETELL_API_KEY")) fail("real workspace must not get a stand-in key");
+    // A seller in the demo that can be texted and called right now (consent, active state, daytime there).
+    const target = await db.contact.findFirst({ where: { workspaceId: ws, kind: "seller", doNotContact: false, phone: { not: null }, consents: { some: { channel: "ai_voice" } }, state: { in: ["TX", "FL", "GA", "OH"] } } });
+    if (!target) fail("no callable demo seller");
+    await db.consent.create({ data: { contactId: target!.id, channel: "sms", evidence: "smoke" } });
+    const before = await db.interaction.count({ where: { workspaceId: ws, contactId: target!.id } });
+    const now = new Date();
+    const sms = await runDemo(ws, () => comms.sendSms(ws, { contactId: target!.id, body: "Smoke: pretend text", skipChecks: true }));
+    if (!/^Texted/.test(sms)) fail(`demo text should send through the stand-in, got ${sms}`);
+    const call = await runDemo(ws, () => comms.placeCall(ws, { contactId: target!.id, agentRole: "seller_acquisition" })).catch((e) => `error: ${e.message}`);
+    console.log("demo call:", call);
+    const { claudeJson } = await import("../src/lib/claude");
+    const ai = await runDemo(ws, () => claudeJson<{ action: string; reasons: string[] }>(ws, { prompt: "test", schema: { type: "object", properties: { action: { type: "string", enum: ["sign", "pass"] }, reasons: { type: "array", items: { type: "string" } } }, required: ["action", "reasons"] } }));
+    if (ai.action !== "sign") fail(`demo AI stand-in answer wrong: ${JSON.stringify(ai)}`);
+    await new Promise((r) => setTimeout(r, 14_000));
+    const after = await db.interaction.findMany({ where: { workspaceId: ws, contactId: target!.id, createdAt: { gte: now } } });
+    if (!after.some((x) => x.channel === "sms" && x.direction === "inbound")) fail("demo text got no pretend reply");
+    if (/^Calling/.test(String(call)) && !after.some((x) => x.channel === "call" && x.status === "done")) fail("demo call never finished");
+    if (after.length + before < 2) fail("demo flows recorded nothing");
+    // Outside demo work, a demo record can't be contacted (public routes never carry the demo flag).
+    const blocked = await comms.sendSms(ws, { contactId: target!.id, body: "should not send", skipChecks: true });
+    if (!/^Blocked/.test(blocked)) fail("demo record contacted outside demo work");
+    console.log("demo stand-ins ok");
+  }
+
   // Pricing locks: every buyer price respects the deal's own resolved minimum fee.
   const { buyerAuthorityFor, priceImpact } = await import("../src/lib/deals");
   const { dealParams } = await import("../src/lib/valuation");
@@ -116,8 +147,8 @@ async function main() {
   for (const p of await db.statePack.findMany({ where: { workspaceId: ws } })) urls.push(`/settings/states/${p.state}`);
   for (const a of await db.agent.findMany({ where: { workspaceId: ws } })) urls.push(`/settings/agents/${a.id}`);
   for (const tp of await db.contractTemplate.findMany({ where: { workspaceId: ws } })) urls.push(`/settings/templates/${tp.id}`);
-  for (const d of await db.opportunity.findMany({ where: { workspaceId: ws } })) for (const tab of ["overview", "numbers", "buyers", "contracts", "closing", "files", "activity"]) urls.push(`/deals/${d.id}?tab=${tab}`);
-  for (const ct of await db.contact.findMany({ where: { workspaceId: ws } })) urls.push(`/contacts/${ct.id}`);
+  for (const d of await db.opportunity.findMany({ where: { workspaceId: ws }, orderBy: { stage: "asc" }, take: 40 })) for (const tab of ["overview", "numbers", "buyers", "contracts", "closing", "files", "activity"]) urls.push(`/deals/${d.id}?tab=${tab}`);
+  for (const ct of await db.contact.findMany({ where: { workspaceId: ws }, take: 60 })) urls.push(`/contacts/${ct.id}`);
   for (const ct of await db.contact.findMany({ where: { workspaceId: ws }, take: 5 })) for (const ch of ["ai_calls", "team_calls", "sms", "email", "note"]) urls.push(`/contacts/${ct.id}?ch=${ch}&lim=200`);
   for (const d of await db.opportunity.findMany({ where: { workspaceId: ws }, take: 5 })) urls.push(`/deals/${d.id}?tab=activity&ch=ai_calls`, `/deals/${d.id}?tab=activity&ch=sms&lim=300`);
   for (const cp of await db.campaign.findMany({ where: { workspaceId: ws } })) urls.push(`/campaigns/${cp.id}`);

@@ -36,8 +36,8 @@ export default async function ContactPage({ params, searchParams }: { params: Pr
     ct.phone ? db.phoneCheck.findMany({ where: { workspaceId: ws, phone: ct.phone }, orderBy: { checkedAt: "desc" }, take: 3 }) : Promise.resolve([]),
   ]);
   const [eCall, eSms] = await Promise.all([checkEligibility(ws, id, "ai_call").catch(() => ({ ok: false, reason: "unknown" })), checkEligibility(ws, id, "sms").catch(() => ({ ok: false, reason: "unknown" }))]);
-  const writable = !c.workspace.isDemo && can(c.role, ct.kind === "buyer" ? "buyers" : "sellers");
-  const canCall = !c.workspace.isDemo && can(c.role, "calls") && !ct.doNotContact;
+  const writable = can(c.role, ct.kind === "buyer" ? "buyers" : "sellers");
+  const canCall = can(c.role, "calls") && !ct.doNotContact;
   const isBuyer = ct.kind === "buyer";
   const current = facts.filter((f) => !f.supersededAt);
 
@@ -267,7 +267,7 @@ export default async function ContactPage({ params, searchParams }: { params: Pr
           </Card>
 
           <Card title="Send a message" pad={false}>
-            {!canCall && <p className="px-4 py-3 text-sm text-muted">{c.workspace.isDemo ? "The demo never sends messages." : ct.doNotContact ? "Do not contact." : "Your role can't message contacts."}</p>}
+            {!canCall && <p className="px-4 py-3 text-sm text-muted">{ct.doNotContact ? "Do not contact." : "Your role can't message contacts."}</p>}
             {canCall && (
               <div className="grid gap-3 border-b border-line p-4 md:grid-cols-2">
                 <ActionForm action={textContactAction} resetOnOk className="space-y-2">

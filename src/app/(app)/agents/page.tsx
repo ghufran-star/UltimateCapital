@@ -37,7 +37,7 @@ export default async function Agents({ searchParams }: { searchParams: Promise<{
                 {d} days
               </Link>
             ))}
-            {!c.workspace.isDemo && can(c.role, "calls") && (
+            {can(c.role, "calls") && (
               <ActionButton action={syncCallsAction} className="btn btn-ghost btn-sm">
                 Sync from Retell
               </ActionButton>

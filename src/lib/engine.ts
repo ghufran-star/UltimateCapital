@@ -1,3 +1,4 @@
+import { runDemo } from "./democtx";
 import { json } from "./audit";
 import { db } from "./db";
 
@@ -184,11 +185,21 @@ export async function handleEvent(e: { id: string; workspaceId: string; type: st
   }
 }
 
+let demoCache: { at: number; ids: Set<string> } | null = null;
+export async function demoWorkspaceIds() {
+  if (demoCache && Date.now() - demoCache.at < 60_000) return demoCache.ids;
+  const ids = new Set((await db.workspace.findMany({ where: { isDemo: true }, select: { id: true } })).map((w) => w.id));
+  demoCache = { at: Date.now(), ids };
+  return ids;
+}
+
 export async function runEvents(limit = 25) {
-  const events = await db.event.findMany({ where: { handledAt: null, workspace: { isDemo: false } }, orderBy: { createdAt: "asc" }, take: limit });
+  const events = await db.event.findMany({ where: { handledAt: null }, orderBy: { createdAt: "asc" }, take: limit });
+  const demoIds = await demoWorkspaceIds();
   for (const e of events) {
     try {
-      await handleEvent(e);
+      if (demoIds.has(e.workspaceId)) await runDemo(e.workspaceId, () => handleEvent(e));
+      else await handleEvent(e);
       await db.event.update({ where: { id: e.id }, data: { handledAt: new Date() } });
     } catch (err) {
       console.error("[event]", e.type, err);
@@ -270,11 +281,12 @@ export async function executeTask(t: { id: string; workspaceId: string; kind: st
 export async function runTasks(limit = 10) {
   await db.task.updateMany({ where: { status: "running", updatedAt: { lt: new Date(Date.now() - 10 * 60_000) } }, data: { status: "open" } });
   const due = await db.task.findMany({
-    where: { status: "open", dueAt: { lte: new Date() }, kind: { in: [...AUTO_TASKS] }, workspace: { isDemo: false } },
+    where: { status: "open", dueAt: { lte: new Date() }, kind: { in: [...AUTO_TASKS] } },
     orderBy: [{ priority: "asc" }, { dueAt: "asc" }],
     take: limit,
   });
   let n = 0;
+  const demoIds = await demoWorkspaceIds();
   const CONTACT_KINDS = ["call", "sms", "email", "buyer_outreach", "demand_campaign"];
   for (const t of due) {
     // A deal with autopilot off gets no automatic contact; the task waits for someone to run it.
@@ -289,7 +301,8 @@ export async function runTasks(limit = 10) {
     if (!claimed.count) continue;
     n++;
     try {
-      const result = await executeTask(t);
+      // Demo tasks run against the stand-ins (nothing leaves the server).
+      const result = demoIds.has(t.workspaceId) ? await runDemo(t.workspaceId, () => executeTask(t)) : await executeTask(t);
       await db.task.update({ where: { id: t.id }, data: { status: "done", result: typeof result === "string" ? result.slice(0, 500) : "done" } });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);

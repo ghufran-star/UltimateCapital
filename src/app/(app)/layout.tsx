@@ -31,12 +31,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <div className="md:pl-60">
         {c.workspace.isDemo && (
           <div className="sticky top-0 z-20 bg-ink px-4 py-2 text-center text-sm text-bg">
-            Demo workspace · sample data · view only — switch workspace to return to your business
-            {demoEmpty && (
-              <ActionButton action={openDemoAction} hidden={{ reset: "1" }} className="ml-3 rounded-md bg-bg px-2 py-0.5 text-xs font-semibold text-ink">
-                Demo is empty: build sample data
-              </ActionButton>
-            )}
+            Demo · sample business · connections are pretend: calls, texts, email and AI all work, nothing reaches a real person
+            <ActionButton action={openDemoAction} hidden={{ reset: "1" }} className="ml-3 rounded-md bg-bg px-2 py-0.5 text-xs font-semibold text-ink" confirm={demoEmpty ? undefined : "Reset the demo to fresh sample data? Changes made in the demo are lost."}>
+              {demoEmpty ? "Demo is empty: build sample data" : "Reset demo"}
+            </ActionButton>
           </div>
         )}
         {paused && (

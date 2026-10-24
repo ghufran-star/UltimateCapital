@@ -24,7 +24,7 @@ export default async function Ops({ searchParams }: { searchParams: Promise<{ ta
     db.task.count({ where: { workspaceId: ws, status: "open", NOT: { assignee: { startsWith: "agent:" } } } }),
     db.event.count({ where: { workspaceId: ws, error: { not: null } } }),
   ]);
-  const writable = !c.workspace.isDemo;
+  const writable = true;
   return (
     <div>
       <AutoRefresh seconds={30} />

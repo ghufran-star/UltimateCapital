@@ -69,7 +69,7 @@ export default async function AgentCalls({ params, searchParams }: { params: Pro
                 Agent settings
               </Link>
             )}
-            {role !== "team" && !c.workspace.isDemo && can(c.role, "calls") && (
+            {role !== "team" && can(c.role, "calls") && (
               <ActionButton action={syncCallsAction} className="btn btn-ghost btn-sm">
                 Sync from Retell
               </ActionButton>

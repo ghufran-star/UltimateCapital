@@ -35,7 +35,7 @@ export default async function TitleDirectory({ searchParams }: { searchParams: P
   ]);
   const unders = rows.length ? [...new Set((await db.titleLicensee.findMany({ where: { state, OR: [{ workspaceId: null }, { workspaceId: ws }] }, select: { underwriters: true }, take: 3000 })).flatMap((r) => r.underwriters))].sort() : [];
   const added = (l: { licenseNo: string | null; name: string; state: string }) => mine.find((m) => (l.licenseNo && m.licenseNo === l.licenseNo && (m.licenseState || m.state) === l.state) || (m.name.toLowerCase() === l.name.toLowerCase() && m.state === l.state));
-  const writable = !c.workspace.isDemo && can(c.role, "closing");
+  const writable = can(c.role, "closing");
   const auto = AUTO_STATES[state];
   const keep = (extra: Record<string, string>) => {
     const u = new URLSearchParams();

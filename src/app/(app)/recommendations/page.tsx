@@ -17,10 +17,10 @@ export default async function Recommendations({ searchParams }: { searchParams: 
   const ws = c.workspace.id;
   const sp = await searchParams;
   const tab = ["decide", "hot", "investors", "learned"].includes(sp.tab || "") ? sp.tab! : "decide";
-  if (!c.workspace.isDemo) await syncOutcomes(ws);
+  await syncOutcomes(ws);
   const scope = { ...dealScope(c), ...(sp.mine ? { assigneeId: c.user.id } : {}) };
   const [{ recs, hot, learned }, tr] = await Promise.all([recommendations(ws, scope), track(ws)]);
-  const writable = !c.workspace.isDemo && can(c.role, "deals");
+  const writable = can(c.role, "deals");
   const ai = await db.recommendation.findMany({ where: { workspaceId: ws, source: "ai", opportunityId: { in: recs.map((r) => r.opportunityId) } }, orderBy: { createdAt: "desc" } });
   const pushIds = recs.filter((r) => r.action === "push_buyers" || r.action === "sign" || r.action === "negotiate").map((r) => r.opportunityId);
   const topHot = hot.slice(0, 25);

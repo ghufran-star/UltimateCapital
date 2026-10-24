@@ -28,7 +28,7 @@ export default async function TitleCompanies({ searchParams }: { searchParams: P
   const tr = await trackRecords(ws, ts.map((t) => t.id));
   const order = { preferred: 0, active: 1, avoid: 2 } as Record<string, number>;
   ts.sort((a, b) => (order[a.status] ?? 1) - (order[b.status] ?? 1) || (tr.get(b.id)?.closed || 0) - (tr.get(a.id)?.closed || 0) || a.name.localeCompare(b.name));
-  const writable = !c.workspace.isDemo && can(c.role, "closing");
+  const writable = can(c.role, "closing");
   return (
     <div>
       <PageHeader

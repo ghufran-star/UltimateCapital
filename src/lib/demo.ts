@@ -9,10 +9,11 @@ import { DEFAULT_TITLE_CHECKLIST } from "./stages";
 import { draftPack, type StatePackData } from "./states";
 
 // The demo workspace: a large, varied sample business at every stage, in several states.
-// It is view-only and can never contact anyone (guards in comms, the worker and the dialer).
+// Everything works in it: outside services are answered by built-in stand-ins (standins.ts), so it
+// can never reach a real person or a paid service.
 // Bump DEMO_VERSION whenever the data changes: an outdated or half-built demo rebuilds itself.
 
-const DEMO_VERSION = "4";
+const DEMO_VERSION = "5";
 const DEMO_NAME = "Demo · Sample Wholesaling Co";
 const COMPANY = "Sample Wholesaling Co";
 
@@ -34,23 +35,44 @@ const usd = (n?: number | null) => (n == null ? "?" : `$${Math.round(n).toLocale
 const sha = (s: string) => createHash("sha256").update(s).digest("hex");
 const token = () => sha(randomBytes(24).toString("hex"));
 
-type Market = { city: string; state: string; county: string; zips: string[]; area: string; arv: [number, number]; streets: string[] };
+type Market = { city: string; state: string; county: string; zips: string[]; area: string; alt: string[]; arv: [number, number]; streets: string[] };
 const MARKETS: Market[] = [
-  { city: "Houston", state: "TX", county: "Harris", zips: ["77088", "77016", "77087", "77044", "77028", "77033"], area: "713", arv: [175000, 320000], streets: ["Oak Hollow Dr", "Pinecrest Ln", "Bellfort Ave", "Wild Pine St", "Cullen Blvd", "Tidwell Rd", "Kirkwood Dr"] },
-  { city: "San Antonio", state: "TX", county: "Bexar", zips: ["78221", "78207", "78228", "78211"], area: "210", arv: [155000, 285000], streets: ["Mission Ridge", "Rosewood Ct", "Culebra Rd", "Zarzamora St", "Pecan Valley Dr"] },
-  { city: "Dallas", state: "TX", county: "Dallas", zips: ["75216", "75217", "75227", "75241"], area: "214", arv: [185000, 340000], streets: ["Bonnie View Rd", "Lake June Rd", "Ledbetter Dr", "Buckner Blvd"] },
-  { city: "Jacksonville", state: "FL", county: "Duval", zips: ["32209", "32208", "32254", "32210"], area: "904", arv: [165000, 300000], streets: ["Moncrief Rd", "Lem Turner Rd", "Edgewood Ave", "Blanding Blvd"] },
-  { city: "Tampa", state: "FL", county: "Hillsborough", zips: ["33610", "33604", "33612"], area: "813", arv: [230000, 420000], streets: ["Sligh Ave", "Hillsborough Ave", "Fowler Ave", "Nebraska Ave"] },
-  { city: "Atlanta", state: "GA", county: "Fulton", zips: ["30310", "30315", "30318", "30311"], area: "404", arv: [200000, 380000], streets: ["Cascade Rd", "Pryor Rd", "Hollywood Rd", "Campbellton Rd"] },
-  { city: "Columbus", state: "OH", county: "Franklin", zips: ["43205", "43207", "43211", "43204"], area: "614", arv: [135000, 250000], streets: ["Livingston Ave", "Parsons Ave", "Cleveland Ave", "Sullivant Ave"] },
-  { city: "Cleveland", state: "OH", county: "Cuyahoga", zips: ["44105", "44108", "44102"], area: "216", arv: [90000, 175000], streets: ["E 131st St", "Superior Ave", "Lorain Ave"] },
-  { city: "Phoenix", state: "AZ", county: "Maricopa", zips: ["85009", "85017", "85035"], area: "602", arv: [260000, 420000], streets: ["W McDowell Rd", "N 43rd Ave", "W Indian School Rd"] },
-  { city: "Charlotte", state: "NC", county: "Mecklenburg", zips: ["28208", "28216", "28205"], area: "704", arv: [220000, 360000], streets: ["Tuckaseegee Rd", "Beatties Ford Rd", "Central Ave"] },
+  { city: "Houston", state: "TX", county: "Harris", zips: ["77088", "77016", "77087", "77044", "77028", "77033"], area: "713", alt: ["281", "832", "346"], arv: [175000, 320000], streets: ["Oak Hollow Dr", "Pinecrest Ln", "Bellfort Ave", "Wild Pine St", "Cullen Blvd", "Tidwell Rd", "Kirkwood Dr"] },
+  { city: "San Antonio", state: "TX", county: "Bexar", zips: ["78221", "78207", "78228", "78211"], area: "210", alt: ["726"], arv: [155000, 285000], streets: ["Mission Ridge", "Rosewood Ct", "Culebra Rd", "Zarzamora St", "Pecan Valley Dr"] },
+  { city: "Dallas", state: "TX", county: "Dallas", zips: ["75216", "75217", "75227", "75241"], area: "214", alt: ["469", "972"], arv: [185000, 340000], streets: ["Bonnie View Rd", "Lake June Rd", "Ledbetter Dr", "Buckner Blvd"] },
+  { city: "Jacksonville", state: "FL", county: "Duval", zips: ["32209", "32208", "32254", "32210"], area: "904", alt: ["324"], arv: [165000, 300000], streets: ["Moncrief Rd", "Lem Turner Rd", "Edgewood Ave", "Blanding Blvd"] },
+  { city: "Tampa", state: "FL", county: "Hillsborough", zips: ["33610", "33604", "33612"], area: "813", alt: ["656"], arv: [230000, 420000], streets: ["Sligh Ave", "Hillsborough Ave", "Fowler Ave", "Nebraska Ave"] },
+  { city: "Orlando", state: "FL", county: "Orange", zips: ["32805", "32808", "32811"], area: "407", alt: ["689"], arv: [240000, 390000], streets: ["Kirkman Rd", "Pine Hills Rd", "Westmoreland Dr", "Silver Star Rd"] },
+  { city: "Atlanta", state: "GA", county: "Fulton", zips: ["30310", "30315", "30318", "30311"], area: "404", alt: ["470", "678"], arv: [200000, 380000], streets: ["Cascade Rd", "Pryor Rd", "Hollywood Rd", "Campbellton Rd"] },
+  { city: "Columbus", state: "OH", county: "Franklin", zips: ["43205", "43207", "43211", "43204"], area: "614", alt: ["380"], arv: [135000, 250000], streets: ["Livingston Ave", "Parsons Ave", "Cleveland Ave", "Sullivant Ave"] },
+  { city: "Cleveland", state: "OH", county: "Cuyahoga", zips: ["44105", "44108", "44102"], area: "216", alt: ["440"], arv: [90000, 175000], streets: ["E 131st St", "Superior Ave", "Lorain Ave"] },
+  { city: "Memphis", state: "TN", county: "Shelby", zips: ["38109", "38106", "38127", "38118"], area: "901", alt: ["731"], arv: [110000, 210000], streets: ["Elvis Presley Blvd", "Lamar Ave", "Frayser Blvd", "Winchester Rd"] },
+  { city: "Nashville", state: "TN", county: "Davidson", zips: ["37207", "37208", "37013"], area: "615", alt: ["629"], arv: [280000, 450000], streets: ["Dickerson Pike", "Buchanan St", "Nolensville Pike"] },
+  { city: "Indianapolis", state: "IN", county: "Marion", zips: ["46218", "46201", "46222", "46226"], area: "317", alt: ["463"], arv: [120000, 230000], streets: ["E 38th St", "Washington St", "Lafayette Rd", "Post Rd"] },
+  { city: "Kansas City", state: "MO", county: "Jackson", zips: ["64130", "64128", "64127"], area: "816", alt: ["975"], arv: [120000, 220000], streets: ["Prospect Ave", "Troost Ave", "E 31st St"] },
+  { city: "St. Louis", state: "MO", county: "St. Louis City", zips: ["63115", "63136", "63120"], area: "314", alt: ["557"], arv: [95000, 190000], streets: ["Natural Bridge Ave", "W Florissant Ave", "Goodfellow Blvd"] },
+  { city: "Birmingham", state: "AL", county: "Jefferson", zips: ["35211", "35206", "35208"], area: "205", alt: ["659"], arv: [100000, 200000], streets: ["Bessemer Rd", "Center St", "Avenue F"] },
+  { city: "Detroit", state: "MI", county: "Wayne", zips: ["48205", "48219", "48227", "48228"], area: "313", alt: ["679"], arv: [80000, 170000], streets: ["Gratiot Ave", "Grand River Ave", "Schaefer Hwy", "Warren Ave"] },
+  { city: "Philadelphia", state: "PA", county: "Philadelphia", zips: ["19132", "19133", "19140"], area: "215", alt: ["267", "445"], arv: [150000, 280000], streets: ["N Broad St", "Germantown Ave", "Lehigh Ave"] },
+  { city: "Phoenix", state: "AZ", county: "Maricopa", zips: ["85009", "85017", "85035"], area: "602", alt: ["480"], arv: [260000, 420000], streets: ["W McDowell Rd", "N 43rd Ave", "W Indian School Rd"] },
+  { city: "Charlotte", state: "NC", county: "Mecklenburg", zips: ["28208", "28216", "28205"], area: "704", alt: ["980"], arv: [220000, 360000], streets: ["Tuckaseegee Rd", "Beatties Ford Rd", "Central Ave"] },
+  { city: "Greensboro", state: "NC", county: "Guilford", zips: ["27405", "27406", "27401"], area: "336", alt: ["743"], arv: [170000, 290000], streets: ["Phillips Ave", "Randleman Rd", "Summit Ave"] },
 ];
+// Only 555-0100…0199 are reserved for fiction, so each market rolls over to its other area codes.
 const phoneSeq: Record<string, number> = {};
 const phoneFor = (area: string) => {
-  phoneSeq[area] = (phoneSeq[area] ?? 99) + 1; // 555-0100..0199 are reserved fictional numbers
-  return `+1${area}555${String(phoneSeq[area]).padStart(4, "0")}`;
+  const m = MARKETS.find((x) => x.area === area || x.alt.includes(area));
+  const pool = m ? [m.area, ...m.alt] : [area];
+  for (const a of pool) {
+    phoneSeq[a] = (phoneSeq[a] ?? 99) + 1;
+    if (phoneSeq[a] <= 199) return `+1${a}555${String(phoneSeq[a]).padStart(4, "0")}`;
+  }
+  // Every reserved number in the market is used: borrow another market's.
+  for (const x of MARKETS) for (const a of [x.area, ...x.alt]) {
+    phoneSeq[a] = (phoneSeq[a] ?? 99) + 1;
+    if (phoneSeq[a] <= 199) return `+1${a}555${String(phoneSeq[a]).padStart(4, "0")}`;
+  }
+  throw new Error("Ran out of fictional phone numbers");
 };
 
 const FIRST = ["Linda", "Robert", "Angela", "James", "Maria", "Kevin", "Dorothy", "Carlos", "Patricia", "Earl", "Gloria", "Terrence", "Sandra", "Luis", "Brenda", "Walter", "Yolanda", "Gregory", "Denise", "Frank", "Rosa", "Harold", "Tamika", "Raymond", "Shirley", "Victor", "Janice", "Curtis", "Evelyn", "Dwayne", "Margaret", "Hector", "Beverly", "Ronald", "Latoya", "Eugene", "Carmen", "Wayne", "Doris", "Marcus"];
@@ -84,7 +106,7 @@ const weighted = <T,>(items: [T, number][]) => {
 
 type Scenario = { stage: string; exception?: string; tag?: string };
 // Each line is one deal. Tags drive the story: near = within the near-agreement gap, hot = several serious buyers, etc.
-const SCENARIOS: Scenario[] = [
+const BASE_SCENARIOS: Scenario[] = [
   ...Array.from({ length: 5 }, () => ({ stage: "NEW" })),
   { stage: "ELIGIBLE" }, { stage: "ELIGIBLE" }, { stage: "ELIGIBLE", tag: "pack_off" },
   { stage: "OUTREACH" }, { stage: "OUTREACH" }, { stage: "OUTREACH", tag: "voicemail" }, { stage: "OUTREACH", tag: "texts" }, { stage: "OUTREACH", exception: "DO_NOT_CONTACT", tag: "stop" }, { stage: "OUTREACH", tag: "dnc_blocked" },
@@ -100,13 +122,17 @@ const SCENARIOS: Scenario[] = [
   { stage: "CLOSING", tag: "countersign" }, { stage: "CLOSING", tag: "settlement_issue" }, { stage: "CLOSING", tag: "settlement_ok" },
   { stage: "CLOSED", tag: "paid_month" }, { stage: "CLOSED", tag: "paid_month" }, { stage: "CLOSED", tag: "paid_month" }, { stage: "CLOSED", tag: "paid_old" }, { stage: "CLOSED", tag: "paid_old" }, { stage: "CLOSED", tag: "paid_old" },
 ];
+// Four times the story (≈250 deals), so every stage, exception and state has plenty in it.
+const SCENARIOS: Scenario[] = [...BASE_SCENARIOS, ...BASE_SCENARIOS, ...BASE_SCENARIOS, ...BASE_SCENARIOS, { stage: "CLOSED", tag: "paid_old" }, { stage: "NEGOTIATION", tag: "near" }];
 const ORDER = ["NEW", "ELIGIBLE", "OUTREACH", "ENGAGED", "QUALIFIED", "PROPERTY_DISCOVERY", "UNDERWRITING", "OFFER_READY", "NEGOTIATION", "CONTRACT_PREPARATION", "UNDER_CONTRACT", "DISPOSITION", "CLOSING", "CLOSED"];
 const atLeast = (stage: string, s: string) => ORDER.indexOf(stage) >= ORDER.indexOf(s);
 
 // Markets with an active State Pack can be worked; others stay at NEW/ELIGIBLE.
-const ACTIVE = ["TX", "FL", "GA", "OH"];
+const ACTIVE = ["TX", "FL", "GA", "OH", "TN", "IN", "MO", "AL", "MI"];
 
 // ---------------------------------------------------------------- entry points
+
+let building: Promise<{ id: string }> | null = null;
 
 export async function ensureDemoWorkspace(userId: string) {
   const existing = await db.workspace.findFirst({ where: { isDemo: true } });
@@ -120,32 +146,58 @@ export async function ensureDemoWorkspace(userId: string) {
         return existing;
       }
     }
+    if (building) return join(building, userId);
     // Outdated or half-built: rebuild from scratch.
-    await db.workspace.delete({ where: { id: existing.id } });
+    await removeDemo(existing.id);
   }
-  return buildDemo(userId);
+  return join(building || buildDemo(userId), userId);
+}
+
+/** One build at a time; anyone else waiting gets the same demo. */
+async function join(p: Promise<{ id: string }>, userId: string) {
+  const ws = await p;
+  await db.membership.upsert({ where: { workspaceId_userId: { workspaceId: ws.id, userId } }, create: { workspaceId: ws.id, userId, role: "owner" }, update: {} });
+  return ws;
+}
+
+/** Deletes the demo and everything it saved, including rows not tied to the workspace by a foreign key. */
+async function removeDemo(id: string) {
+  await db.titleLicensee.deleteMany({ where: { workspaceId: id } });
+  await db.recommendation.deleteMany({ where: { workspaceId: id } });
+  await db.apiCache.deleteMany({ where: { key: { startsWith: "demo:" } } });
+  await db.workspace.delete({ where: { id } }).catch(() => null);
 }
 
 export async function resetDemo(userId: string) {
+  if (building) return join(building, userId);
   const ws = await db.workspace.findFirst({ where: { isDemo: true } });
-  if (ws) await db.workspace.delete({ where: { id: ws.id } });
-  return buildDemo(userId);
+  if (ws) await removeDemo(ws.id);
+  return join(buildDemo(userId), userId);
 }
 
-async function buildDemo(userId: string) {
-  const ws = await db.workspace.create({ data: { name: DEMO_NAME, isDemo: true } });
-  await db.membership.create({ data: { workspaceId: ws.id, userId, role: "owner" } });
-  try {
-    seedN = 20261023;
-    for (const k of Object.keys(phoneSeq)) delete phoneSeq[k];
-    await seed(ws.id, userId);
-    await db.setting.create({ data: { workspaceId: ws.id, key: "DEMO_VERSION", value: encrypt(DEMO_VERSION) } });
-  } catch (e) {
-    console.error("[demo] seed failed", e);
-    await db.workspace.delete({ where: { id: ws.id } }).catch(() => null);
-    throw new Error(`Building the demo failed: ${e instanceof Error ? e.message : String(e)}`);
-  }
-  return ws;
+function buildDemo(userId: string) {
+  building = (async () => {
+    const ws = await db.workspace.create({ data: { name: DEMO_NAME, isDemo: true } });
+    await db.membership.create({ data: { workspaceId: ws.id, userId, role: "owner" } });
+    // Marks the workspace as the demo for the settings layer (stand-in keys) before anything else runs.
+    await db.setting.create({ data: { workspaceId: ws.id, key: "DEMO_WORKSPACE", value: encrypt("1") } });
+    try {
+      seedN = 20261023;
+      for (const k of Object.keys(phoneSeq)) delete phoneSeq[k];
+      const t0 = Date.now();
+      await seed(ws.id, userId);
+      await db.setting.create({ data: { workspaceId: ws.id, key: "DEMO_VERSION", value: encrypt(DEMO_VERSION) } });
+      console.log(`[demo] built in ${Math.round((Date.now() - t0) / 1000)}s`);
+    } catch (e) {
+      console.error("[demo] seed failed", e);
+      await removeDemo(ws.id);
+      throw new Error(`Building the demo failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+    return ws;
+  })().finally(() => {
+    building = null;
+  });
+  return building;
 }
 
 // ---------------------------------------------------------------- the seed
@@ -196,6 +248,12 @@ async function seed(ws: string, ownerId: string) {
     ["FL", "active", pack("FL", (d) => { d.contracts.optionPeriodDays = 15; d.contracts.typicalEmd = 2000; d.outreach.callStart = "08:00"; d.outreach.callEnd = "20:00"; d.outreach.maxCallsPerDayPerContact = 3; d.outreach.stateDncList = true; d.outreach.notes = "Sample: Florida mini-TCPA, keep to 3 calls per 24h per person on the same subject."; })],
     ["GA", "active", pack("GA", (d) => { d.closing.attorneyState = true; d.contracts.typicalEmd = 1500; d.contracts.optionPeriodDays = 7; d.closing.notes = "Sample: closings run through a closing attorney."; })],
     ["OH", "active", pack("OH", (d) => { d.contracts.typicalEmd = 1000; d.contracts.optionPeriodDays = 10; d.closing.ronAllowed = true; })],
+    ["TN", "active", pack("TN", (d) => { d.contracts.typicalEmd = 1000; d.contracts.optionPeriodDays = 10; d.outreach.stateDncList = true; })],
+    ["IN", "active", pack("IN", (d) => { d.contracts.typicalEmd = 500; d.contracts.optionPeriodDays = 7; d.outreach.stateDncList = true; d.outreach.notes = "Sample: Indiana keeps its own DNC list; scrub against it."; })],
+    ["MO", "active", pack("MO", (d) => { d.contracts.typicalEmd = 1000; d.contracts.optionPeriodDays = 10; d.outreach.stateDncList = true; })],
+    ["AL", "active", pack("AL", (d) => { d.contracts.typicalEmd = 1000; d.contracts.optionPeriodDays = 10; })],
+    ["MI", "active", pack("MI", (d) => { d.contracts.typicalEmd = 1000; d.contracts.optionPeriodDays = 10; d.closing.ronAllowed = true; })],
+    ["PA", "unverified", pack("PA", (d) => { d.contracts.typicalEmd = 1000; d.wholesaling.licenseNotes = "Sample: Philadelphia wholesaler licence; counsel reviewing."; })],
     ["AZ", "unverified", pack("AZ", (d) => { d.contracts.typicalEmd = 1000; d.wholesaling.licenseNotes = "Sample: under review by counsel."; })],
     ["NC", "draft", pack("NC", () => undefined)],
     ["IL", "disabled", pack("IL", (d) => { d.wholesaling.marketingBeforeContract = "prohibited"; d.wholesaling.licenseNotes = "Sample: paused pending licensing decision."; })],
@@ -251,19 +309,63 @@ async function seed(ws: string, ownerId: string) {
   for (const [i, m] of MARKETS.entries()) {
     await db.phoneNumber.create({ data: { workspaceId: ws, number: phoneFor(m.area), market: m.city, state: m.state, inboundMode: i % 4 === 3 ? "forward" : i % 5 === 4 ? "voicemail" : "agent", forwardUserId: i % 4 === 3 ? who("acq") : null } });
   }
-  const TITLE = [
-    ["TX", "Lone Star Title (sample)", "Rachel Green", "Commitment in 5 business days", "Assignment-friendly. Virtual closings via e-sign + mobile notary."],
-    ["FL", "Sunshine Settlement Services (sample)", "Daniel Ortiz", "Title search 3–4 days", "Handles double closes with transactional funding."],
-    ["GA", "Peach State Closing Attorneys (sample)", "Kendra Moss", "Attorney review 5 days", "Attorney state: closing attorney must supervise."],
-    ["OH", "Buckeye Title Agency (sample)", "Paul Novak", "Commitment in 4 days", "RON closings available."],
-    ["AZ", "Desert Escrow & Title (sample)", "Nina Patel", "Escrow opens same day", "Not used yet: AZ pack under review."],
-  ] as const;
+  type TitleRow = readonly [string, string, string, string, string, Partial<Prisma.TitleCompanyUncheckedCreateInput>];
+  const TITLE: readonly TitleRow[] = [
+    ["TX", "Lone Star Title (sample)", "Rachel Green", "Commitment in 5 business days", "Assignment-friendly. Virtual closings via e-sign + mobile notary.", { status: "preferred", assignments: "yes", doubleClose: "yes", transactionalFunding: "yes", remoteClosing: "yes", mobileNotary: "yes", states: ["TX"], underwriters: ["Stewart Title Guaranty", "First American Title"], emdHandling: "Held in escrow; wire or cashier's cheque; receipted same day", licenseNo: "1877525" }],
+    ["FL", "Sunshine Settlement Services (sample)", "Daniel Ortiz", "Title search 3–4 days", "Handles double closes with transactional funding.", { status: "preferred", assignments: "yes", doubleClose: "yes", transactionalFunding: "yes", remoteClosing: "yes", mobileNotary: "yes", states: ["FL"], underwriters: ["Old Republic National Title"], emdHandling: "Escrow account; receipt emailed within 24h" }],
+    ["GA", "Peach State Closing Attorneys (sample)", "Kendra Moss", "Attorney review 5 days", "Attorney state: closing attorney must supervise.", { status: "active", assignments: "yes", doubleClose: "no", transactionalFunding: "no", remoteClosing: "no", mobileNotary: "yes", states: ["GA"], attorneyStates: ["GA"], underwriters: ["Fidelity National Title"], emdHandling: "Attorney trust account" }],
+    ["OH", "Buckeye Title Agency (sample)", "Paul Novak", "Commitment in 4 days", "RON closings available.", { status: "active", assignments: "yes", doubleClose: "yes", transactionalFunding: "yes", remoteClosing: "yes", states: ["OH", "MI", "IN"], underwriters: ["Chicago Title"] }],
+    ["TN", "Volunteer Title & Escrow (sample)", "Grace Holloway", "Commitment in 3 days", "Closes wholesale assignments weekly in Memphis and Nashville.", { status: "preferred", assignments: "yes", doubleClose: "yes", transactionalFunding: "yes", mobileNotary: "yes", states: ["TN", "AL"], underwriters: ["Westcor Land Title"] }],
+    ["IN", "Hoosier Closing Co (sample)", "Martin Ellis", "Commitment in 5 days", "Prefers double closes over assignments above $25K fees.", { status: "active", assignments: "no", doubleClose: "yes", transactionalFunding: "yes", states: ["IN"] }],
+    ["MO", "Gateway Title Group (sample)", "Ana Ruiz", "Commitment in 4 days", "Covers both Kansas City and St. Louis.", { status: "active", assignments: "yes", doubleClose: "yes", remoteClosing: "yes", states: ["MO"] }],
+    ["AL", "Magic City Title (sample)", "Leon Brooks", "Commitment in 6 days", "Slow on payoffs; follow up twice a week.", { status: "avoid", assignments: "yes", doubleClose: "no", states: ["AL"] }],
+    ["MI", "Great Lakes Title Services (sample)", "Irene Kowalski", "Commitment in 4 days", "Detroit specialists; handles water bill escrows.", { status: "active", assignments: "yes", doubleClose: "yes", transactionalFunding: "yes", remoteClosing: "yes", states: ["MI"] }],
+    ["AZ", "Desert Escrow & Title (sample)", "Nina Patel", "Escrow opens same day", "Not used yet: AZ pack under review.", { status: "active", states: ["AZ"] }],
+  ];
   const titleBy: Record<string, string> = {};
-  for (const [state, name, person, turn, notes] of TITLE) {
-    const phone = phoneFor(MARKETS.find((m) => m.state === state)!.area);
-    const t = await db.titleCompany.create({ data: { workspaceId: ws, name, state, email: `closings.${state.toLowerCase()}@example.com`, phone, wireVerifiedPhone: phone, turnaround: turn, fees: "Escrow fee $450–$650 + title policy", notes, contacts: json([{ name: person, role: "Escrow officer", email: `closings.${state.toLowerCase()}@example.com`, phone }]) } });
+  for (const [state, name, person, turn, notes, extra] of TITLE) {
+    const m = MARKETS.find((x) => x.state === state)!;
+    const phone = phoneFor(m.area);
+    const email = `closings.${state.toLowerCase()}@example.com`;
+    const t = await db.titleCompany.create({
+      data: {
+        workspaceId: ws,
+        name,
+        state,
+        email,
+        phone,
+        wireVerifiedPhone: phone,
+        wireConfirmedAt: extra.status === "preferred" ? ago(between(5, 30)) : null,
+        wireConfirmedBy: extra.status === "preferred" ? "Mike Torres" : null,
+        turnaround: turn,
+        fees: "Escrow fee $450–$650 + title policy; double close +$350",
+        notes,
+        website: `https://${name.toLowerCase().replace(/\(sample\)/, "").trim().replace(/[^a-z]+/g, "-")}.example.com`,
+        address: `${between(100, 999)} ${pick(m.streets)}`,
+        city: m.city,
+        zip: m.zips[0],
+        licenseState: state,
+        licenseCheckedAt: ago(3),
+        offices: json([{ label: "Main office", address: `${between(100, 999)} ${pick(m.streets)}`, city: m.city, state, phone }]),
+        contacts: json([
+          { name: person, role: "Escrow officer", email, phone },
+          { name: `${pick(FIRST)} ${pick(LAST)}`, role: "Closing processor", email: `processor.${state.toLowerCase()}@example.com`, phone: phoneFor(m.area) },
+        ]),
+        createdAt: ago(between(60, 200)),
+        ...extra,
+      },
+    });
     titleBy[state] = t.id;
+    for (const k of ["W-9", "E&O certificate"]) await db.fileObject.create({ data: { workspaceId: ws, entityType: "title_company", entityId: t.id, kind: k === "W-9" ? "w9" : "eo", name: `${k.toLowerCase().replace(/[^a-z0-9]+/g, "-")}.txt`, mime: "text/plain", size: 80, data: Buffer.from(`SAMPLE ${k} for ${name}.`), uploadedBy: ownerId, createdAt: ago(between(20, 90)) } });
   }
+  // A small sample of the free state licence directory (the real Texas list loads from open data).
+  const LIC = ["Bayou City Title", "Alamo Abstract & Title", "Trinity Escrow", "Gulf Coast Title Partners", "Hill Country Title", "Prairie Land Title", "Rio Grande Settlement", "Cypress Creek Title", "Brazos Valley Abstract", "Pecan Street Title", "Metroplex Closing Co", "Lone Star Title (sample)"];
+  await db.titleLicensee.createMany({
+    data: [
+      ...LIC.map((n, i) => ({ key: `${ws}:TX:${i === LIC.length - 1 ? "1877525" : `S${100 + i}`}`, workspaceId: ws, state: "TX", name: n, licenseNo: i === LIC.length - 1 ? "1877525" : `S${100 + i}`, licenseType: "Title Agency", city: pick(["Houston", "San Antonio", "Dallas", "Austin"]), county: pick(["Harris", "Bexar", "Dallas", "Travis"]), counties: ["Harris", "Fort Bend", "Montgomery", "Bexar", "Dallas"].slice(0, 2 + (i % 4)), underwriters: [pick(["Stewart Title Guaranty", "First American Title", "Old Republic National Title", "Fidelity National Title"])], status: i === 4 ? "expired" : "active", source: "demo" })),
+      ...["Peach State Closing Attorneys (sample)", "Southern Escrow Group", "Buckhead Title"].map((n, i) => ({ key: `${ws}:GA:G${i}`, workspaceId: ws, state: "GA", name: n, licenseNo: `G${200 + i}`, city: "Atlanta", county: "Fulton", status: "active", source: "demo" })),
+    ],
+  });
 
   // ---------- compliance: suppressions & consent ----------
   const supp: Prisma.SuppressionCreateManyInput[] = [];
@@ -274,7 +376,10 @@ async function seed(ws: string, ownerId: string) {
   log(ownerId, "dnc_imported", null, null, ago(33), undefined, { source: "state_dnc:TX", found: 5120, added: 5120 });
 
   // ---------- buyers ----------
-  const COMPANIES = ["Reed Home Flips LLC", "Shah Rentals", "Alamo Capital Partners", null, "Bayou Holdings", "GK Investments", "Gulf Coast Homebuyers", "Red Oak Equity", "Northside Rehab Co", "Sunbelt SFR Fund II", "Keystone Property Group", "BlueDoor Homes", null, "Magnolia Rentals", "Tri-County Flips", "Lakeshore Capital", "Peachtree Renovations", "Iron Horse Investments", null, "First Coast Homes", "Brickline Partners", "Crescent Rentals", "Summit Turnkey", "Copperline Holdings", null, "Harbor Point Capital", "Evergreen Housing LLC", "Cardinal Flips", "Rio Grande Rentals", "Prairie Wind Investors", "Atlas BRRRR Group", null, "Heritage Home Buyers", "Coastal Cash Offers", "Riverbend Equity", "Oakmont Capital", "Westside Property Co", "Granite Peak Homes"];
+  const CO_A = ["Reed", "Shah", "Alamo", "Bayou", "Gulf Coast", "Red Oak", "Northside", "Sunbelt", "Keystone", "BlueDoor", "Magnolia", "Tri-County", "Lakeshore", "Peachtree", "Iron Horse", "First Coast", "Brickline", "Crescent", "Summit", "Copperline", "Harbor Point", "Evergreen", "Cardinal", "Rio Grande", "Prairie Wind", "Atlas", "Heritage", "Coastal", "Riverbend", "Oakmont", "Westside", "Granite Peak", "Delta", "Midtown", "Cornerstone", "Liberty", "Pioneer", "Beacon", "Bluegrass", "Lone Pine"];
+  const CO_B = ["Home Flips LLC", "Rentals", "Capital Partners", "Holdings", "Investments", "Homebuyers", "Equity", "Rehab Co", "SFR Fund II", "Property Group", "Homes", "Renovations", "Turnkey", "BRRRR Group", "Cash Offers", "Housing LLC"];
+  // 150 investors across every market: companies and individuals.
+  const COMPANIES: (string | null)[] = Array.from({ length: 150 }, (_, i) => (i % 6 === 3 ? null : `${CO_A[(i * 7) % CO_A.length]} ${CO_B[(i * 5 + Math.floor(i / CO_A.length)) % CO_B.length]}`));
   const buyerIds: string[] = [];
   const buyerRows: { id: string; name: string; markets: string[]; states: string[]; max: number; cond: Tier; types: string[]; strategy: string; pct: number; net: number; basis: string; funds: boolean; rel: number; per: number }[] = [];
   for (let i = 0; i < COMPANIES.length; i++) {
@@ -347,6 +452,9 @@ async function seed(ws: string, ownerId: string) {
           provider: "retell",
           status: "done",
           outcome: "info_gathered",
+          agentRole: "buyer_acquisition",
+          tools: ["record_facts", "update_buy_box"],
+          endReason: "agent_hangup",
           durationSec: between(180, 600),
           createdAt: ago(between(20, 90)),
           processedAt: ago(20),
@@ -382,7 +490,7 @@ async function seed(ws: string, ownerId: string) {
     const early = !atLeast(sc.stage, "OUTREACH");
     const market = sc.tag === "pack_off" ? MARKETS.find((m) => m.state === "NC")! : early && si % 3 === 0 ? MARKETS.find((m) => m.state === (si % 2 ? "AZ" : "NC"))! : workable[mi++ % workable.length];
     const first = FIRST[si % FIRST.length];
-    const last = LAST[(si * 7) % LAST.length];
+    const last = LAST[(si * 7 + Math.floor(si / FIRST.length) * 3) % LAST.length];
     let address = "";
     do address = `${between(100, 9899)} ${pick(market.streets)}`;
     while (usedAddr.has(address));
@@ -401,6 +509,9 @@ async function seed(ws: string, ownerId: string) {
     const occupancy = sc.tag === "rental" ? "tenant" : pick(["vacant", "vacant", "owner", "tenant"]);
     const phone = phoneFor(market.area);
     const email = `${first.toLowerCase()}.${last.toLowerCase()}${si}@example.com`;
+    const SITS = ["absentee", "vacant", "high_equity", "pre_foreclosure", "tax_delinquent", "probate", "tired_landlord", "code_violations", "out_of_state", "divorce", "free_clear", "senior", "major_repairs", "behind_payments"];
+    const situations = [...new Set([...(sc.tag === "probate" ? ["probate", "out_of_state"] : []), ...(occupancy === "vacant" ? ["vacant"] : []), ...(titleFlags.includes("back_taxes") ? ["tax_delinquent"] : []), ...Array.from({ length: between(0, 2) }, () => pick(SITS))])];
+    const leadSource = sc.tag === "inbound" ? pick(["website", "inbound_call", "bandit_signs"]) : pick(["direct_mail", "cold_call", "cold_call", "sms", "driving_for_dollars", "list_provider", "referral", "ppc"]);
     const created = ago(between(ORDER.indexOf(sc.stage) * 4 + 3, ORDER.indexOf(sc.stage) * 6 + 12));
     const contacted = atLeast(sc.stage, "OUTREACH");
     const engaged = atLeast(sc.stage, "ENGAGED");
@@ -443,6 +554,9 @@ async function seed(ws: string, ownerId: string) {
         summary: !engaged ? null : sc.exception === "DECLINED" ? `Not interested in selling right now. ${motivation.split(";")[0]}.` : `${motivation}. Timeline: ${timeline.toLowerCase()}. ${atLeast(sc.stage, "NEGOTIATION") ? "Negotiating price." : "Gathering details."}`,
         openQuestions: sc.stage === "PROPERTY_DISCOVERY" ? ["Age of the water heater", "Any permits for the back addition?", "Is there a mortgage or lien balance?"] : sc.stage === "QUALIFIED" ? ["Condition of roof and HVAC", "Who else is on title?"] : [],
         lastContactAt: contacted ? ago(between(0, 6)) : null,
+        phoneStatus: contacted ? pick(["mobile", "mobile", "mobile", "landline", "voip", null]) : si % 9 === 4 ? "invalid" : null,
+        phoneCarrier: contacted ? pick(["T-Mobile USA (sample)", "Verizon Wireless (sample)", "AT&T Wireless (sample)"]) : null,
+        phoneCheckedAt: contacted ? ago(between(1, 20)) : null,
         createdAt: created,
       },
     });
@@ -469,6 +583,14 @@ async function seed(ws: string, ownerId: string) {
         condition: Object.keys(items).length ? json({ items }) : undefined,
         titleFlags,
         rentEstimate: r100(arv * 0.0085),
+        situations: situations,
+        ownerType: sc.tag === "probate" ? "estate" : pick(["individual", "individual", "individual", "llc", "trust"]),
+        absentee: occupancy === "tenant" || occupancy === "vacant" ? true : rnd() < 0.15,
+        estValue: r1000(arv * (0.62 + rnd() * 0.18)),
+        loanBalance: rnd() < 0.45 ? 0 : r1000(arv * (0.1 + rnd() * 0.4)),
+        lastSalePrice: r1000(arv * (0.25 + rnd() * 0.35)),
+        lastSaleDate: ago(between(365 * 4, 365 * 30)),
+        lotAcres: type === "land" ? Math.round((0.5 + rnd() * 9) * 10) / 10 : Math.round((0.1 + rnd() * 0.3) * 100) / 100,
         createdAt: created,
         ownerships: { create: [{ contactId: seller.id, role: sc.tag === "probate" ? "heir" : "owner", verified: atLeast(sc.stage, "CONTRACT_PREPARATION") }] },
       },
@@ -527,6 +649,8 @@ async function seed(ws: string, ownerId: string) {
         approvedAt: contractPrice ? ago(between(6, 14)) : null,
         emdRecommendedAt: sc.tag === "near_hot" || sc.tag === "hot" ? ago(1) : null,
         contractPrice,
+        leadSource,
+        nextStep: sc.exception === "CALLBACK" ? "Call back Thursday afternoon" : sc.stage === "OFFER_READY" ? "Present the offer" : sc.stage === "NEGOTIATION" ? "Send the written offer at max buy" : sc.stage === "PROPERTY_DISCOVERY" ? "Get photos of the roof and kitchen" : null,
         createdAt: created,
       },
     });
@@ -609,6 +733,13 @@ async function seed(ws: string, ownerId: string) {
         ],
       });
     }
+    for (const x of I) {
+      if (x.channel !== "call" || x.provider !== "retell") continue;
+      x.agentRole = x.direction === "inbound" ? "receptionist" : x.outcome === "offer_discussed" ? "negotiation" : /condition/i.test(String(x.summary)) ? "property_discovery" : "seller_acquisition";
+      x.tools = x.outcome === "offer_discussed" ? ["get_offer_numbers", "record_facts", "request_approval"] : x.agentRole === "property_discovery" ? ["record_facts", "record_condition"] : x.durationSec ? ["record_facts", "book_callback"] : [];
+      x.endReason = x.outcome === "no_answer" ? "dial_no_answer" : x.outcome === "voicemail" ? "voicemail_reached" : pick(["agent_hangup", "user_hangup"]);
+      if (x.agentRole === "receptionist" && rnd() < 0.5) (x.transferred = true), (x.endReason = "call_transfer");
+    }
     if (I.length) await db.interaction.createMany({ data: I });
 
     // ---------- facts (versioned, with one conflict) ----------
@@ -635,13 +766,13 @@ async function seed(ws: string, ownerId: string) {
 
   // ---------- buyer matching (same hard filters as the live matcher) ----------
   const tierIdx = (t: string | null | undefined) => TIER_ORDER.indexOf((t || "none") as Tier);
+  const dncBuyers = new Set((await db.contact.findMany({ where: { workspaceId: ws, kind: "buyer", doNotContact: true }, select: { id: true } })).map((x) => x.id));
   const matchesFor = async (d: DealRec) => {
     if (!d.calc) return [];
     const p = await db.property.findUniqueOrThrow({ where: { id: d.propertyId } });
     const out: { b: (typeof buyerRows)[number]; net: number; netPct: number; price: number }[] = [];
     for (const b of buyerRows) {
-      const contact = await db.contact.findUnique({ where: { id: b.id }, select: { doNotContact: true } });
-      if (contact?.doNotContact) continue;
+      if (dncBuyers.has(b.id)) continue;
       if (!b.states.includes(p.state) || !b.markets.includes(p.city)) continue;
       if (!b.types.includes(p.propertyType)) continue;
       if (d.calc.floor > b.max) continue;
@@ -960,23 +1091,27 @@ async function seed(ws: string, ownerId: string) {
   // ---------- files: photos on deals, proof of funds on buyers ----------
   const photo = (room: string, hue: number) =>
     Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300"><rect width="400" height="300" fill="hsl(${hue},25%,82%)"/><rect x="60" y="120" width="280" height="150" fill="hsl(${hue},20%,65%)"/><polygon points="40,130 200,40 360,130" fill="hsl(${hue},30%,45%)"/><rect x="170" y="190" width="60" height="80" fill="hsl(${hue},15%,35%)"/><text x="200" y="30" text-anchor="middle" font-family="sans-serif" font-size="22" fill="#222">${room} (sample photo)</text></svg>`);
-  const withPhotos = deals.filter((d) => atLeast(d.stage, "PROPERTY_DISCOVERY")).slice(0, 18);
+  const withPhotos = deals.filter((d) => atLeast(d.stage, "PROPERTY_DISCOVERY")).slice(0, 90);
+  const FILES: Prisma.FileObjectCreateManyInput[] = [];
   for (const [i, d] of withPhotos.entries()) {
-    const rooms = ["Front", "Kitchen", "Roof", "Bathroom", "Back yard"].slice(0, 2 + (i % 4));
+    const rooms = ["Front", "Kitchen", "Roof", "Bathroom", "Back yard", "Living room", "Basement"].slice(0, 2 + (i % 6));
     for (const [j, r] of rooms.entries()) {
-      await db.fileObject.create({ data: { workspaceId: ws, entityType: "opportunity", entityId: d.id, kind: "photo", name: `${r.toLowerCase().replace(" ", "-")}.svg`, mime: "image/svg+xml", size: 600, data: photo(r, (i * 37 + j * 23) % 360), shared: atLeast(d.stage, "UNDER_CONTRACT") && j < 3, uploadedBy: j % 2 ? "agent:property_discovery" : ownerId, createdAt: ago(between(1, 20)) } });
+      const data = photo(r, (i * 37 + j * 23) % 360);
+      FILES.push({ workspaceId: ws, entityType: "opportunity", entityId: d.id, kind: "photo", name: `${r.toLowerCase().replace(" ", "-")}.svg`, mime: "image/svg+xml", size: data.length, data, shared: atLeast(d.stage, "UNDER_CONTRACT") && j < 4, uploadedBy: j % 3 === 2 ? "seller (texted in)" : j % 2 ? "agent:property_discovery" : ownerId, note: j % 3 === 2 ? "Texted in by the seller" : null, createdAt: ago(between(1, 20)) });
     }
     if (atLeast(d.stage, "UNDER_CONTRACT")) {
-      await db.fileObject.create({ data: { workspaceId: ws, entityType: "opportunity", entityId: d.id, kind: "title", name: "title-commitment.txt", mime: "text/plain", size: 120, data: Buffer.from(`SAMPLE title commitment for ${d.address}. Requirements: payoff of first mortgage; release of 2019 mechanic's lien.`), uploadedBy: who("tc"), createdAt: ago(between(1, 10)) } });
+      const data = Buffer.from(`SAMPLE title commitment for ${d.address}. Requirements: payoff of first mortgage; release of 2019 mechanic's lien.`);
+      FILES.push({ workspaceId: ws, entityType: "opportunity", entityId: d.id, kind: "title", name: "title-commitment.txt", mime: "text/plain", size: data.length, data, uploadedBy: who("tc"), createdAt: ago(between(1, 10)) });
     }
   }
+  await db.fileObject.createMany({ data: FILES });
   const pofBuyers = await db.contact.findMany({ where: { workspaceId: ws, kind: "buyer", fundsVerified: true }, take: 10 });
   for (const b of pofBuyers) {
     await db.fileObject.create({ data: { workspaceId: ws, entityType: "contact", entityId: b.id, kind: "pof", name: "proof-of-funds.txt", mime: "text/plain", size: 90, data: Buffer.from(`SAMPLE proof of funds: ${b.company || b.firstName} · available balance $${between(150, 900)},000 · bank letter dated recently.`), uploadedBy: who("dispo"), createdAt: ago(between(5, 60)) } });
   }
 
   // ---------- live DNC check history ----------
-  const allSellers = await db.contact.findMany({ where: { workspaceId: ws, kind: "seller", phone: { not: null } }, take: 45 });
+  const allSellers = await db.contact.findMany({ where: { workspaceId: ws, kind: "seller", phone: { not: null } }, take: 160 });
   await db.phoneCheck.createMany({
     data: allSellers.map((s, i) => {
       const d = deals.find((x) => x.sellerId === s.id);
@@ -986,7 +1121,7 @@ async function seed(ws: string, ownerId: string) {
   });
 
   // ---------- call quality checks and agent history ----------
-  const aiCalls = await db.interaction.findMany({ where: { workspaceId: ws, channel: "call", provider: "retell", body: { not: null } }, take: 16 });
+  const aiCalls = await db.interaction.findMany({ where: { workspaceId: ws, channel: "call", provider: "retell", body: { not: null } }, take: 70 });
   for (const [i, k] of aiCalls.entries()) {
     const flags = i === 3 ? [{ rule: "Price above authority", severity: "high", quote: "Agent said $131,000; highest released $126,000" }] : i % 5 === 1 ? [{ rule: "AI disclosure late", severity: "medium", quote: "Disclosed it was an AI only after 40 seconds" }] : [];
     await db.interaction.update({ where: { id: k.id }, data: { intel: json({ ...((k.intel || {}) as object), agentRole: (k.intel as { agentRole?: string } | null)?.agentRole || pick(["seller_acquisition", "property_discovery", "negotiation"]), qa: { score: flags.some((f) => f.severity === "high") ? 58 : flags.length ? 81 : between(86, 97), flags, pricesSaid: [], summary: "Sample review", checkedAt: new Date().toISOString() } }) } });
@@ -1074,6 +1209,46 @@ async function seed(ws: string, ownerId: string) {
       { workspaceId: ws, type: "property.changed", handledAt: ago(3), error: "RentCast 429: rate limit (valuation retried in 5 minutes)", createdAt: ago(3) },
     ],
   });
+
+  // ---------- written offer letters (sent, opened, countered) ----------
+  const { renderOfferPdf } = await import("./offerletter");
+  const letterDeals = deals.filter((d) => d.stage === "NEGOTIATION" && d.calc).slice(0, 14);
+  for (const [i, d] of letterDeals.entries()) {
+    const price = d.calc!.sellerOffers[1] ?? d.calc!.maxBuy;
+    const f = { sellerName: d.sellerName, propertyAddress: `${d.address}, ${d.market.city}, ${d.market.state}`, price, closingDays: 21, emd: 1000, inspectionDays: 7, closingCosts: "buyer" as const, asIs: true, expiresDays: 5, extraTerms: i % 4 === 1 ? "Seller may stay up to 2 weeks after closing, rent-free." : "", note: `${d.sellerName.split(" ")[0]}, thank you for talking with us. Here is our offer in writing, as discussed.`, companyName: COMPANY, fromName: "Omar Haddad", fromPhone: "+17135550142", fromEmail: "omar.demo@example.com" };
+    const sentAt = ago(i % 5, 3);
+    const viewed = i % 3 !== 2;
+    const countered = i % 5 === 3;
+    const o = await db.offer.create({
+      data: { opportunityId: d.id, side: "seller", contactId: d.sellerId, round: 10, price, by: "us", authority: i % 4 === 0 ? "auto" : "manual", token: randomBytes(18).toString("base64url"), letter: json(f), pdf: new Uint8Array(await renderOfferPdf(f, sentAt)), sentAt, sentVia: i % 2 ? ["email", "sms"] : ["sms"], viewedAt: viewed ? new Date(+sentAt + 3 * 3600_000) : null, viewCount: viewed ? 1 + (i % 4) : 0, expiresAt: new Date(+sentAt + 5 * DAY), auto: i % 4 === 0, status: countered ? "countered" : "proposed", respondedAt: countered ? new Date(+sentAt + 5 * 3600_000) : null, response: countered ? "Can you do a little better? My neighbour got more." : null, createdAt: sentAt },
+    });
+    if (countered) await db.offer.create({ data: { opportunityId: d.id, side: "seller", contactId: d.sellerId, round: 11, price: r1000(price * 1.06), by: "them", response: "Can you do a little better? My neighbour got more.", createdAt: new Date(+sentAt + 5 * 3600_000) } });
+    log(i % 4 === 0 ? "agent:negotiation" : who("acq"), "offer_letter_sent", "opportunity", d.id, sentAt, { price, auto: i % 4 === 0 }, { offerId: o.id });
+  }
+
+  // ---------- AI recommendations already acted on (so "what it learned" has a history) ----------
+  const finished = deals.filter((d) => d.stage === "CLOSED" || d.stage === "NEGOTIATION");
+  await db.recommendation.createMany({
+    data: finished.slice(0, 40).map((d, i) => {
+      const closed = d.stage === "CLOSED";
+      const action = closed ? "sign" : i % 3 === 0 ? "pass" : "negotiate";
+      return { workspaceId: ws, key: `${d.id}:${action}:hist${i}`, opportunityId: d.id, action, price: d.contractPrice || d.calc?.maxBuy || null, reasons: ["Sample history"], status: i % 7 === 6 ? "dismissed" : "acted", taken: action === "sign" ? "offer_letter" : action === "pass" ? "pass" : "call", decidedBy: ownerId, decidedAt: ago(between(20, 80)), outcome: closed ? "won" : null, outcomeAt: closed ? ago(between(5, 20)) : null, createdAt: ago(between(20, 80)) };
+    }),
+  });
+
+  // ---------- disposition and team calls (per-agent history) ----------
+  const IC: Prisma.InteractionCreateManyInput[] = [];
+  const serious = await db.buyerInterest.findMany({ where: { opportunity: { workspaceId: ws }, stage: { in: ["INTERESTED", "OFFER_SUBMITTED", "AGREEMENT_EXECUTED", "COMPLETED"] } }, include: { contact: true, opportunity: { include: { property: true } } }, take: 60 });
+  for (const [i, b] of serious.entries()) {
+    const when = ago(between(0, 10), between(0, 20));
+    IC.push({ workspaceId: ws, contactId: b.contactId, opportunityId: b.opportunityId, channel: "call", direction: "outbound", provider: "retell", agentRole: "disposition", tools: ["send_deal_details", "record_buyer_offer"], endReason: "agent_hangup", status: "done", outcome: i % 4 === 0 ? "offer_discussed" : "interested", durationSec: between(120, 480), summary: `Walked ${b.contact.firstName} through ${b.opportunity.property.address}; ${i % 4 === 0 ? "made a verbal offer" : "wants photos and a walkthrough"}.`, body: `Agent: Hi ${b.contact.firstName}, this is Jordan, an AI assistant with ${COMPANY}. Following up on ${b.opportunity.property.address}. Did you get the numbers?\n${b.contact.firstName}: I did. What's the rehab really look like?\nAgent: The seller described a ${b.opportunity.property.conditionTier || "moderate"} rehab; photos are on your private deal page.\n${b.contact.firstName}: ${i % 4 === 0 ? "I could do it at the round two price if I can close in ten days." : "Okay, can I walk it this week?"}\nAgent: I'll pass that to the team and confirm today.`, createdAt: when, processedAt: when });
+  }
+  const teamDeals = deals.filter((d) => atLeast(d.stage, "ENGAGED") && !atLeast(d.stage, "CLOSING")).slice(0, 40);
+  for (const [i, d] of teamDeals.entries()) {
+    const when = ago(between(0, 14), between(0, 20));
+    IC.push({ workspaceId: ws, contactId: d.sellerId, opportunityId: d.id, channel: "call", direction: i % 5 === 0 ? "inbound" : "outbound", provider: i % 3 === 0 ? "manual" : "twilio", status: "done", outcome: pick(["conversation", "conversation", "callback", "voicemail"]), durationSec: between(60, 900), summary: i % 3 === 0 ? `Logged call: ${d.sellerName.split(" ")[0]} wants to talk to family first.` : `Team call with ${d.sellerName.split(" ")[0]} about ${d.address}.`, body: i % 3 === 0 ? `Caller notes: ${pick(["Spoke for 10 minutes, wants to talk to her son first.", "Asked about closing costs; explained we pay them.", "Will send photos of the roof tonight."])}` : null, intel: json({ human: pick([who("acq"), who("acq2"), who("caller")]), loggedBy: i % 3 === 0 ? "Omar Haddad" : undefined }), createdAt: when, processedAt: when });
+  }
+  await db.interaction.createMany({ data: IC });
 
   await db.auditEvent.createMany({ data: audits });
 }

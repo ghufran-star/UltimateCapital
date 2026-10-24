@@ -78,9 +78,42 @@ export async function loadSettings(workspaceId: string, force = false): Promise<
   return v;
 }
 
+// The demo workspace looks fully connected: its keys are stand-ins that only the built-in fakes
+// accept (see standins.ts), and it never falls back to the real environment keys.
+const STANDIN_KEYS: Partial<Record<SettingKey, string>> = {
+  ANTHROPIC_API_KEY: "key",
+  RETELL_API_KEY: "key",
+  TWILIO_ACCOUNT_SID: "sid",
+  TWILIO_AUTH_TOKEN: "key",
+  RESEND_API_KEY: "key",
+  RENTCAST_API_KEY: "key",
+  PROPERTY_DATA_KEY: "key",
+  DNC_SCRUB_KEY: "key",
+  LITIGATOR_KEY: "key",
+  BANK_API_KEY: "key",
+  TRANSCRIBE_KEY: "key",
+  WEBHOOK_SECRET: "key",
+};
+const STANDIN_PLAIN: Partial<Record<SettingKey, string>> = {
+  EMAIL_FROM: "deals@demo.example.com",
+  INBOUND_EMAIL_DOMAIN: "deals.example.com",
+  PROPERTY_DATA_PROVIDER: "batchdata",
+  DNC_PROVIDER: "dncscrub",
+  LITIGATOR_PROVIDER: "blacklist_alliance",
+  BANK_PROVIDER: "mercury",
+  TRANSCRIBE_PROVIDER: "deepgram",
+  NUMBER_LOOKUP: "twilio",
+};
+export const standinKey = (ws: string) => `uc-demo-${ws}`;
+
 /** Setting for a workspace: Settings page first, then environment variable. */
 export async function setting(workspaceId: string, key: SettingKey): Promise<string | undefined> {
   const v = await loadSettings(workspaceId);
+  if (v.DEMO_WORKSPACE || v.DEMO_VERSION) {
+    if (STANDIN_KEYS[key]) return key === "TWILIO_ACCOUNT_SID" ? `AC${standinKey(workspaceId)}` : standinKey(workspaceId);
+    if (key === "PUBLIC_URL") return process.env.PUBLIC_URL || (process.env.RAILWAY_PUBLIC_DOMAIN ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}` : v[key]) || undefined;
+    return v[key] || STANDIN_PLAIN[key] || undefined;
+  }
   return v[key] || process.env[key] || undefined;
 }
 

@@ -52,7 +52,10 @@ async function fromNumber(ws: string, state?: string | null) {
 }
 
 /** The demo workspace never contacts anyone, whatever keys are configured. */
+/** The demo only contacts people through the stand-ins (demo work). Anything else touching a demo record is stopped. */
 async function demoGuard(ws: string) {
+  const { inDemo } = await import("./democtx");
+  if (inDemo()) return false;
   const w = await db.workspace.findUnique({ where: { id: ws }, select: { isDemo: true } });
   return !!w?.isDemo;
 }

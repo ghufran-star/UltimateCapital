@@ -14,7 +14,7 @@ export default async function RulesPage() {
   const versions = await db.ruleSet.findMany({ where: { workspaceId: c.workspace.id }, orderBy: { version: "desc" }, take: 20 });
   const packs = await db.statePack.findMany({ where: { workspaceId: c.workspace.id }, select: { state: true } });
   const data: RuleSetData = { ...DEFAULT_RULESET, ...rs.data, defaults: { ...DEFAULT_RULESET.defaults, ...rs.data.defaults } };
-  const readOnly = c.workspace.isDemo || !can(c.role, "rules");
+  const readOnly = !can(c.role, "rules");
   return (
     <div className="space-y-5">
       <PageHeader back={{ href: "/settings", label: "Settings" }} title="Deal rules" sub={`Version ${rs.version} is live. Every valuation records which version it used.`} />

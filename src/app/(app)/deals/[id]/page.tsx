@@ -45,7 +45,7 @@ export default async function DealPage({ params, searchParams }: { params: Promi
   const ladder = calc ? buyerLadder(contractBasis(opp, calc), calc, rp) : null;
   const pack = await activePack(ws, opp.property.state);
   const pendingApprovals = await db.approval.findMany({ where: { workspaceId: ws, entityId: opp.id, status: "pending" } });
-  const writable = !c.workspace.isDemo && can(c.role, "deals");
+  const writable = can(c.role, "deals");
   const sellerOffers = opp.offers.filter((o) => o.side === "seller");
   const me = writable && seller && tab === "overview" ? await db.user.findUnique({ where: { id: c.user.id }, select: { phone: true } }) : null;
   const letter = writable && seller && tab === "overview" ? await letterDefaults(ws, opp.id, undefined, { name: c.user.name, email: c.user.email, phone: me?.phone }) : null;
@@ -399,13 +399,13 @@ export default async function DealPage({ params, searchParams }: { params: Promi
       )}
 
       {tab === "numbers" && <NumbersTab opp={opp} v={v} calc={calc} params={rp} writable={writable} playbook={rs.data.playbook} />}
-      {tab === "buyers" && <BuyersTab opp={opp} calc={calc} ladder={ladder} writable={!c.workspace.isDemo && can(c.role, "buyers")} />}
-      {tab === "contracts" && <ContractsTab opp={opp} ws={ws} writable={!c.workspace.isDemo && can(c.role, "contracts")} userName={c.user.name} />}
-      {tab === "closing" && <ClosingTab opp={opp} ws={ws} writable={!c.workspace.isDemo && can(c.role, "closing")} />}
+      {tab === "buyers" && <BuyersTab opp={opp} calc={calc} ladder={ladder} writable={can(c.role, "buyers")} />}
+      {tab === "contracts" && <ContractsTab opp={opp} ws={ws} writable={can(c.role, "contracts")} userName={c.user.name} />}
+      {tab === "closing" && <ClosingTab opp={opp} ws={ws} writable={can(c.role, "closing")} />}
       {tab === "files" && (
         <Card title="Photos and documents">
-          <FilesPanel ws={ws} entityType="opportunity" entityId={opp.id} writable={!c.workspace.isDemo} investorShare />
-          {!c.workspace.isDemo && (
+          <FilesPanel ws={ws} entityType="opportunity" entityId={opp.id} writable investorShare />
+          {(
             <div className="mt-4 border-t border-line pt-3">
               <ActionButton action={photoRepairsAction} hidden={{ opportunityId: opp.id }} className="btn btn-ghost btn-sm">
                 Estimate repairs from photos
@@ -415,7 +415,7 @@ export default async function DealPage({ params, searchParams }: { params: Promi
           )}
         </Card>
       )}
-      {tab === "activity" && <ActivityTab opp={opp} ws={ws} writable={!c.workspace.isDemo} ch={sp.ch} lim={Number(sp.lim) || undefined} />}
+      {tab === "activity" && <ActivityTab opp={opp} ws={ws} writable ch={sp.ch} lim={Number(sp.lim) || undefined} />}
     </div>
   );
 }

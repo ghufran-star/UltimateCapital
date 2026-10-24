@@ -12,7 +12,7 @@ import { addStateAction } from "../../../actions/settings";
 export default async function States() {
   const c = await pageCtx();
   const packs = await db.statePack.findMany({ where: { workspaceId: c.workspace.id }, orderBy: { state: "asc" } });
-  const ro = c.workspace.isDemo || !can(c.role, "states");
+  const ro = !can(c.role, "states");
   return (
     <div className="max-w-4xl space-y-5">
       <PageHeader back={{ href: "/settings", label: "Settings" }} title="States" sub="Every state runs on its own pack: wholesaling rules, disclosures, contract terms, calling hours and consent. Nothing goes out in a state until its pack is active." />

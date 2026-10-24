@@ -177,9 +177,9 @@ export async function requireCtx(p?: Permission, opts: { write?: boolean } = {})
   const c = await getCtx();
   if (!c) throw new HttpError(401, "Please sign in.");
   if (p && !can(c.role, p)) throw new HttpError(403, "Your role doesn't allow this.");
-  if (opts.write && (c.workspace.isDemo || c.role === "viewer")) {
-    throw new HttpError(403, c.workspace.isDemo ? "The demo workspace is view-only." : "Your role is view-only.");
-  }
+  if (opts.write && c.role === "viewer") throw new HttpError(403, "Your role is view-only.");
+  // The demo is fully usable (everything outside is a stand-in), except who has access.
+  if (opts.write && c.workspace.isDemo && p === "team") throw new HttpError(403, "Team access can't be changed in the demo. Switch to your real account.");
   return c;
 }
 
@@ -190,3 +190,7 @@ export function errorResponse(err: unknown) {
 }
 
 export const actor = (c: Ctx) => c.user.id;
+
+/** The shared sign-in behind "Try the demo" on the sign-in page. */
+export const DEMO_USER_EMAIL = "try-the-demo@example.com";
+export const isDemoUser = (c: { user: { email: string } }) => c.user.email === DEMO_USER_EMAIL;

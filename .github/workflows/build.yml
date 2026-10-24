@@ -3,6 +3,8 @@ on:
   push:
     branches: [main]
   pull_request:
+permissions:
+  contents: write
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -51,6 +53,22 @@ jobs:
           for i in $(seq 1 60); do curl -sf localhost:3000/api/health && break; sleep 1; done
       - name: Crawl every page
         run: bash scripts/crawl.sh
+      - name: Phone-size check and screenshots
+        if: always()
+        run: |
+          npm install --no-save --no-audit --no-fund playwright@1.48.2 > /dev/null
+          npx playwright install --with-deps chromium > /dev/null
+          node scripts/phone.mjs
+      - name: Publish screenshots to the ci-shots branch
+        if: always()
+        run: |
+          [ -d shots ] || exit 0
+          cd shots
+          git init -q -b ci-shots
+          git config user.name ci && git config user.email ci@example.com
+          echo "${GITHUB_SHA}" > COMMIT.txt
+          git add -A && git commit -qm "Screenshots for ${GITHUB_SHA}"
+          git push -qf "https://x-access-token:${{ github.token }}@github.com/${GITHUB_REPOSITORY}.git" ci-shots
       - name: Server log on failure
         if: failure()
         run: |

@@ -104,6 +104,8 @@ async function main() {
   for (const tp of await db.contractTemplate.findMany({ where: { workspaceId: ws } })) urls.push(`/settings/templates/${tp.id}`);
   for (const d of await db.opportunity.findMany({ where: { workspaceId: ws } })) for (const tab of ["overview", "numbers", "buyers", "contracts", "closing", "files", "activity"]) urls.push(`/deals/${d.id}?tab=${tab}`);
   for (const ct of await db.contact.findMany({ where: { workspaceId: ws } })) urls.push(`/contacts/${ct.id}`);
+  for (const ct of await db.contact.findMany({ where: { workspaceId: ws }, take: 5 })) for (const ch of ["ai_calls", "team_calls", "sms", "email", "note"]) urls.push(`/contacts/${ct.id}?ch=${ch}&lim=200`);
+  for (const d of await db.opportunity.findMany({ where: { workspaceId: ws }, take: 5 })) urls.push(`/deals/${d.id}?tab=activity&ch=ai_calls`, `/deals/${d.id}?tab=activity&ch=sms&lim=300`);
   for (const cp of await db.campaign.findMany({ where: { workspaceId: ws } })) urls.push(`/campaigns/${cp.id}`);
   for (const k of await db.contract.findMany({ where: { workspaceId: ws, finalPdf: { not: null } }, take: 3 })) urls.push(`/api/contracts/${k.id}/pdf`);
 

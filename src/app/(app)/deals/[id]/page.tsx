@@ -21,10 +21,11 @@ import { photoRepairsAction } from "../../../actions/files";
 import { buyerLadder, contractBasis } from "@/lib/deals";
 import { ActivityTab, BuyersTab, ClosingTab, ContractsTab, NumbersTab } from "./sections";
 
-export default async function DealPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ tab?: string }> }) {
+export default async function DealPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ tab?: string; ch?: string; lim?: string }> }) {
   const c = await pageCtx();
   const { id } = await params;
-  const tab = (await searchParams).tab || "overview";
+  const sp = await searchParams;
+  const tab = sp.tab || "overview";
   const ws = c.workspace.id;
   const opp = await db.opportunity.findFirst({
     where: { id, workspaceId: ws, ...dealScope(c) },
@@ -375,7 +376,7 @@ export default async function DealPage({ params, searchParams }: { params: Promi
           )}
         </Card>
       )}
-      {tab === "activity" && <ActivityTab opp={opp} ws={ws} writable={!c.workspace.isDemo} />}
+      {tab === "activity" && <ActivityTab opp={opp} ws={ws} writable={!c.workspace.isDemo} ch={sp.ch} lim={Number(sp.lim) || undefined} />}
     </div>
   );
 }

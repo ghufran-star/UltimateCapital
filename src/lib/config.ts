@@ -11,6 +11,8 @@ export const SETTING_DEFS = [
   { key: "RETELL_API_KEY", label: "Retell API key", secret: true, group: "Calling", help: "AI voice calls (outbound campaigns and inbound)." },
   { key: "TWILIO_ACCOUNT_SID", label: "Twilio Account SID", secret: false, group: "Calling", help: "Texts and human calls." },
   { key: "TWILIO_AUTH_TOKEN", label: "Twilio Auth Token", secret: true, group: "Calling", help: "" },
+  { key: "TRANSCRIBE_PROVIDER", label: "Transcribe team calls", secret: false, group: "Calling", help: "off (default), deepgram or openai. AI calls are always transcribed by Retell; this is only for calls your team makes or logs (paid per minute by the provider)." },
+  { key: "TRANSCRIBE_KEY", label: "Transcription API key", secret: true, group: "Calling", help: "Deepgram or OpenAI API key, matching the provider above." },
   { key: "RESEND_API_KEY", label: "Resend API key", secret: true, group: "Email", help: "Sends email (contracts, deal packages, title)." },
   { key: "EMAIL_FROM", label: "Send email from", secret: false, group: "Email", help: "e.g. deals@yourdomain.com (domain verified in Resend)" },
   { key: "INBOUND_EMAIL_DOMAIN", label: "Inbound email domain", secret: false, group: "Email", help: "Deal inboxes become deal-xxxx@this-domain. Point its inbound webhook to /api/webhooks/email" },

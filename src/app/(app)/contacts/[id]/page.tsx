@@ -13,11 +13,12 @@ import { can, pageCtx } from "@/lib/session";
 import { BUYER_OTHER, BUYER_STATUSES, label } from "@/lib/stages";
 import { ago, fmtDate, fullName, usd } from "@/lib/util";
 import { addNoteAction, callContactAction, consentAction, dncContactAction, emailContactAction, saveBuyBoxAction, textContactAction, updateContactAction } from "../../../actions/records";
-import { InteractionList } from "../../deals/[id]/sections";
 import { correctFactAction, editSummaryAction } from "../../../actions/deals";
 import { FilesPanel } from "@/components/files";
+import { Timeline } from "@/components/timeline";
 
-export default async function ContactPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function ContactPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ ch?: string; lim?: string }> }) {
+  const sp = await searchParams;
   const c = await pageCtx();
   const { id } = await params;
   const ws = c.workspace.id;
@@ -28,7 +29,7 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
   if (!ct) notFound();
   if (c.states.length && ct.kind === "seller" && !ct.ownerships.some((o) => c.states.includes(o.property.state)) && !(ct.state && c.states.includes(ct.state))) notFound();
   const [interactions, facts, tasks, members, checks] = await Promise.all([
-    db.interaction.findMany({ where: { workspaceId: ws, contactId: id }, orderBy: { createdAt: "desc" }, take: 50 }),
+    db.interaction.count({ where: { workspaceId: ws, contactId: id } }),
     db.fact.findMany({ where: { workspaceId: ws, entityType: "contact", entityId: id }, orderBy: { createdAt: "desc" }, take: 60 }),
     db.task.findMany({ where: { workspaceId: ws, contactId: id, status: "open" }, orderBy: { dueAt: "asc" } }),
     db.membership.findMany({ where: { workspaceId: ws }, include: { user: true } }),
@@ -265,7 +266,8 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
             <FilesPanel ws={ws} entityType="contact" entityId={id} writable={writable} />
           </Card>
 
-          <Card title="Conversations" pad={false}>
+          <Card title="Send a message" pad={false}>
+            {!canCall && <p className="px-4 py-3 text-sm text-muted">{c.workspace.isDemo ? "The demo never sends messages." : ct.doNotContact ? "Do not contact." : "Your role can't message contacts."}</p>}
             {canCall && (
               <div className="grid gap-3 border-b border-line p-4 md:grid-cols-2">
                 <ActionForm action={textContactAction} resetOnOk className="space-y-2">
@@ -281,8 +283,17 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
                 </ActionForm>
               </div>
             )}
-            {interactions.length ? <InteractionList items={interactions} writable={writable} /> : <Empty title="No conversations yet" />}
           </Card>
+          <Timeline
+            ws={ws}
+            contactIds={[id]}
+            opportunityIds={isBuyer ? [] : (await db.opportunity.findMany({ where: { workspaceId: ws, sellerId: id }, select: { id: true } })).map((d) => d.id)}
+            base={`/contacts/${id}`}
+            ch={sp.ch}
+            lim={Number(sp.lim) || undefined}
+            writable={writable}
+            people={[{ id, name: fullName(ct) || "This contact" }]}
+          />
         </div>
 
         <div className="space-y-5">

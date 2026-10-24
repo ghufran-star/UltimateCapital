@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Timeline } from "@/components/timeline";
 import { ActionButton, ActionForm, Submit } from "@/components/client";
 import { Combo } from "@/components/combo";
 import { CONDITION_TIERS, OCCUPANCY, OWNER_TYPES, PROPERTY_TYPES, SITUATIONS, TITLE_FLAGS } from "@/lib/catalog";
@@ -817,10 +818,24 @@ export async function ClosingTab({ opp, ws, writable }: { opp: Deal; ws: string;
 
 // ---------- Activity ----------
 
-export async function ActivityTab({ opp, ws, writable }: { opp: Deal; ws: string; writable: boolean }) {
+export async function ActivityTab({ opp, ws, writable, ch, lim }: { opp: Deal; ws: string; writable: boolean; ch?: string; lim?: number }) {
   const contactIds = [opp.sellerId, ...opp.interests.map((i) => i.contactId)].filter(Boolean) as string[];
-  const [interactions, tasks, audits] = await Promise.all([
-    db.interaction.findMany({ where: { workspaceId: ws, OR: [{ opportunityId: opp.id }, ...(opp.sellerId ? [{ contactId: opp.sellerId }] : [])] }, include: { contact: true }, orderBy: { createdAt: "desc" }, take: 60 }),
+  // The whole history of the property: every deal on it, the seller and every owner.
+  const owners = opp.property.ownerships.map((o) => o.contact);
+  const sellerIds = [...new Set([opp.sellerId, ...owners.map((o) => o.id)].filter(Boolean) as string[])];
+  const propertyDeals = (await db.opportunity.findMany({ where: { workspaceId: ws, propertyId: opp.propertyId }, select: { id: true } })).map((d) => d.id);
+  const people = [
+    ...sellerIds.map((id) => {
+      const o = owners.find((x) => x.id === id);
+      return { id, name: o ? fullName(o) : "Seller", role: "seller" };
+    }),
+    ...opp.interests.map((i) => ({ id: i.contactId, name: fullName(i.contact), role: "investor" })),
+  ];
+  if (opp.sellerId && !owners.some((o) => o.id === opp.sellerId)) {
+    const s = await db.contact.findUnique({ where: { id: opp.sellerId }, select: { firstName: true, lastName: true, company: true } });
+    if (s) people[0] = { id: opp.sellerId, name: fullName(s), role: "seller" };
+  }
+  const [tasks, audits] = await Promise.all([
     db.task.findMany({ where: { workspaceId: ws, OR: [{ entityId: opp.id }, { contactId: { in: contactIds.slice(0, 1) } }] }, orderBy: [{ status: "asc" }, { dueAt: "asc" }], take: 40 }),
     db.auditEvent.findMany({ where: { workspaceId: ws, entityId: opp.id }, orderBy: { createdAt: "desc" }, take: 40 }),
   ]);
@@ -840,9 +855,7 @@ export async function ActivityTab({ opp, ws, writable }: { opp: Deal; ws: string
             </ActionForm>
           </Card>
         )}
-        <Card title="Conversations" pad={false}>
-          {interactions.length ? <InteractionList items={interactions} /> : <Empty title="No conversations yet" />}
-        </Card>
+        <Timeline ws={ws} contactIds={sellerIds} opportunityIds={propertyDeals} base={`/deals/${opp.id}?tab=activity`} ch={ch} lim={lim} writable={writable} people={people} opportunityId={opp.id} title="Communication history (seller, property and investors on this deal)" />
       </div>
       <div className="space-y-5">
         <Card title="Tasks" pad={false}>

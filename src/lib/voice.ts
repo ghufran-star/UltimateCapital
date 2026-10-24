@@ -2,7 +2,7 @@ import { createHmac } from "node:crypto";
 import { audit, json } from "./audit";
 import { saveSetting, setting } from "./config";
 import { db } from "./db";
-import { escapeXml, fromNumber } from "./comms";
+import { escapeXml, fromNumber, noticeAttr } from "./comms";
 import { checkEligibility } from "./eligibility";
 import { e164, fullName } from "./util";
 
@@ -75,7 +75,7 @@ export async function clientCallTwiml(ws: string, p: Record<string, string>) {
   await db.contact.update({ where: { id: contact.id }, data: { lastContactAt: new Date() } });
   await audit(ws, userId || "team", "call_started", { type: "contact", id: contact.id }, { meta: { via: "browser" } });
   const base = (await setting(ws, "PUBLIC_URL"))?.replace(/\/$/, "") || "";
-  return `<Response><Dial callerId="${from.number}" record="record-from-answer-dual" timeout="30" action="${base}/api/webhooks/twilio/client-done?ws=${ws}&amp;it=${it.id}" recordingStatusCallback="${base}/api/webhooks/twilio/recording?ws=${ws}&amp;it=${it.id}"><Number>${e164(contact.phone)}</Number></Dial></Response>`;
+  return `<Response><Dial callerId="${from.number}" record="record-from-answer-dual" timeout="30" action="${base}/api/webhooks/twilio/client-done?ws=${ws}&amp;it=${it.id}" recordingStatusCallback="${base}/api/webhooks/twilio/recording?ws=${ws}&amp;it=${it.id}"><Number${await noticeAttr(ws, contact.id)}>${e164(contact.phone)}</Number></Dial></Response>`;
 }
 
 /** When the dialled call ends: note no-answer / busy / failed (answered calls are finished by the recording). */

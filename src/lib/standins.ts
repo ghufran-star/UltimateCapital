@@ -176,12 +176,15 @@ function batchdata(path: string, body: Record<string, unknown>): Response {
   const crit = (body.searchCriteria || {}) as { query?: string };
   const take = Math.min(25, Number((body.options as { take?: number })?.take) || 10);
   const [city = "Houston", state = "TX"] = String(crit.query || "Houston, TX").split(",").map((x) => x.trim());
+  const found = 300 + (String(crit.query || "").length * 97) % 4000;
   return json({
     results: {
+      meta: { results: { resultsFound: found } },
       properties: Array.from({ length: take }, (_, i) => ({
         address: { street: `${1000 + i * 17} ${STREETS[i % STREETS.length]}`, city, state: state.slice(0, 2).toUpperCase(), zip: "77001", county: "Demo" },
         building: { bedroomCount: 2 + (i % 3), bathroomCount: 1 + (i % 2), livingAreaSquareFeet: 1100 + i * 40, yearBuilt: 1955 + i },
-        owner: { names: [{ first: NAMES[i % NAMES.length][0], last: NAMES[i % NAMES.length][1] }] },
+        owner: { names: [{ first: NAMES[i % NAMES.length][0], last: NAMES[i % NAMES.length][1] }], ...(i % 3 === 0 ? { mailingAddress: { street: `${200 + i} Elm Ave`, city: "Dallas", state: "TX", zip: "75201" } } : {}) },
+        valuation: { estimatedValue: 140000 + i * 5000 },
         sale: { lastSale: { price: 60000 + i * 3500, saleDate: `20${String(5 + (i % 15)).padStart(2, "0")}-06-01`, mortgageAmount: i % 3 ? 50000 : 0 } },
       })),
     },

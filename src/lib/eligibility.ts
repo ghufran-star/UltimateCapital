@@ -1,7 +1,9 @@
 import { audit, json } from "./audit";
 import { db } from "./db";
 import { cancelTasks } from "./engine";
+import { areaState, areaTz } from "./areacodes";
 import { draftPack, StatePackData, stateTz } from "./states";
+import { complianceFor } from "./switches";
 import { e164, localParts, nextWindow } from "./util";
 
 // Contact eligibility: checked immediately before EVERY call, text and email.
@@ -26,6 +28,48 @@ export async function governingState(ws: string, contactId: string) {
   return c?.ownerships[0]?.property.state || c?.state || null;
 }
 
+/**
+ * Calling hours, strictest wins: the property's state rules in the property's time zone, and (when the owner
+ * switch is on) the same hours where the owner actually lives: their mailing address, then their phone's area code.
+ * If the owner's own state has stricter hours, those apply too. Pure code: no lookups, no AI.
+ */
+export async function callingWindow(ws: string, c: { timezone: string | null; state: string | null; phone: string | null }, state: string | null, pack: StatePackData, isCall: boolean, ownerHours: boolean, now = new Date()) {
+  let [start, end] = isCall ? [pack.outreach.callStart, pack.outreach.callEnd] : [pack.outreach.textStart, pack.outreach.textEnd];
+  let days = pack.outreach.callDays;
+  const zones: { tz: string; where: string }[] = [{ tz: c.timezone || pack.timezone || stateTz(state), where: state ? `the property (${state})` : "the property" }];
+  if (ownerHours) {
+    const homeState = c.state || areaState(c.phone);
+    if (c.state && c.state !== state) zones.push({ tz: stateTz(c.state), where: `the owner's mailing address (${c.state})` });
+    const atz = areaTz(c.phone);
+    if (atz) zones.push({ tz: atz, where: `the owner's phone area code (${areaState(c.phone)})` });
+    if (homeState && homeState !== state) {
+      const home = await activePack(ws, homeState);
+      if (home) {
+        const [hs, he] = isCall ? [home.outreach.callStart, home.outreach.callEnd] : [home.outreach.textStart, home.outreach.textEnd];
+        if (hs > start) start = hs;
+        if (he < end) end = he;
+        days = days.filter((d) => home.outreach.callDays.includes(d));
+      }
+    }
+  }
+  if (start >= end || !days.length) return { ok: false as const, reason: "The property's and the owner's state calling hours don't overlap", retryAt: new Date(now.getTime() + 24 * 3600_000) };
+  const seen = new Set<string>();
+  const list = zones.filter((z) => (seen.has(z.tz) ? false : (seen.add(z.tz), true)));
+  const failing = (t: Date) => list.find((z) => {
+    const { day, hm } = localParts(z.tz, t);
+    return !days.includes(day) || hm < start || hm >= end;
+  });
+  const bad = failing(now);
+  if (!bad) return { ok: true as const };
+  let t = now;
+  for (let i = 0; i < 8; i++) {
+    const f = failing(t);
+    if (!f) break;
+    t = nextWindow(f.tz, start, end, days, new Date(t.getTime() + (i ? 60_000 : 0)));
+  }
+  return { ok: false as const, reason: `Outside calling hours for ${bad.where}: ${start}–${end} ${bad.tz}`, retryAt: t };
+}
+
 export async function checkEligibility(ws: string, contactId: string, channel: Channel, now = new Date()): Promise<Eligibility> {
   const c = await db.contact.findUnique({ where: { id: contactId }, include: { consents: true } });
   if (!c) return { ok: false, reason: "Contact not found" };
@@ -48,20 +92,20 @@ export async function checkEligibility(ws: string, contactId: string, channel: C
     const s = await suppressed(ws, "phone", phone);
     if (s) return { ok: false, reason: s };
     const consent = (ch: string) => c.consents.filter((x) => x.channel === ch).sort((a, b) => +b.createdAt - +a.createdAt)[0];
-    if (channel === "ai_call" && pack.outreach.requireConsentAiVoice) {
+    const sw = await complianceFor(ws, state);
+    // A "no" on record always wins. Cold outreach mode (owner switch) lifts the consent requirement for lists.
+    if (channel === "ai_call" && consent("ai_voice")?.granted === false) return { ok: false, reason: "They withdrew consent for AI-voice calls." };
+    if (channel === "sms" && consent("sms")?.granted === false) return { ok: false, reason: "They withdrew consent for texts." };
+    if (channel === "ai_call" && pack.outreach.requireConsentAiVoice && !sw.coldOutreach) {
       const k = consent("ai_voice");
-      if (!k?.granted) return { ok: false, reason: `${state} requires recorded consent for AI-voice calls. Record consent, or call manually.` };
+      if (!k?.granted) return { ok: false, reason: `${state} requires recorded consent for AI-voice calls. Record consent, call manually, or turn on cold outreach mode (Settings → Calling rules).` };
     }
-    if (channel === "sms" && pack.outreach.requireConsentSms) {
+    if (channel === "sms" && pack.outreach.requireConsentSms && !sw.coldOutreach) {
       const k = consent("sms");
-      if (!k?.granted) return { ok: false, reason: `${state} requires recorded consent for texts.` };
+      if (!k?.granted) return { ok: false, reason: `${state} requires recorded consent for texts. Or turn on cold outreach mode (Settings → Calling rules).` };
     }
-    const tz = c.timezone || pack.timezone || stateTz(state);
-    const [start, end] = isCall ? [pack.outreach.callStart, pack.outreach.callEnd] : [pack.outreach.textStart, pack.outreach.textEnd];
-    const { day, hm } = localParts(tz, now);
-    if (!pack.outreach.callDays.includes(day) || hm < start || hm >= end) {
-      return { ok: false, reason: `Outside permitted hours in ${state} (${start}–${end} ${tz})`, retryAt: nextWindow(tz, start, end, pack.outreach.callDays, now), pack };
-    }
+    const hours = await callingWindow(ws, c, state, pack, isCall, sw.ownerHours, now);
+    if (!hours.ok) return { ok: false, reason: hours.reason, retryAt: hours.retryAt, pack };
     if (isCall) {
       const since = new Date(now.getTime() - 20 * 3600_000);
       const today = await db.interaction.count({ where: { workspaceId: ws, contactId, channel: "call", direction: "outbound", createdAt: { gte: since } } });

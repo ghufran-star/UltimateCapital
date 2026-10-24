@@ -1,7 +1,7 @@
 import type { Prisma } from "@prisma/client";
 import Link from "next/link";
 import { ActionButton, ActionForm, Submit } from "@/components/client";
-import { AGENT_ROLES } from "@/lib/agents";
+import { roleLabel as agentRoleLabel } from "@/lib/agents";
 import { db } from "@/lib/db";
 import { label } from "@/lib/stages";
 import { transcriptionOn } from "@/lib/transcribe";
@@ -25,7 +25,7 @@ const FILTERS = [
 const filterWhere = (k: string): Prisma.InteractionWhereInput =>
   k === "ai_calls" ? { channel: "call", provider: "retell" } : k === "team_calls" ? { channel: "call", NOT: { provider: "retell" } } : ["sms", "email", "note", "system"].includes(k) ? { channel: k } : {};
 
-const roleLabel = (r?: string | null) => (r ? (AGENT_ROLES.find((a) => a.key === r)?.label as string) || label(r) : null);
+const roleLabel = (r?: string | null) => (r ? agentRoleLabel(r) || label(r) : null);
 
 const OUTCOMES = ["conversation", "interested", "not_interested", "callback", "voicemail", "no_answer", "wrong_number", "offer_made", "appointment_set", "dnc"];
 

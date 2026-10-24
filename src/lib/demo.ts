@@ -13,7 +13,7 @@ import { draftPack, type StatePackData } from "./states";
 // can never reach a real person or a paid service.
 // Bump DEMO_VERSION whenever the data changes: an outdated or half-built demo rebuilds itself.
 
-const DEMO_VERSION = "6";
+const DEMO_VERSION = "7";
 const DEMO_NAME = "Test mode · Sample Wholesaling Co";
 const COMPANY = "Sample Wholesaling Co";
 
@@ -291,8 +291,11 @@ async function seed(ws: string, ownerId: string) {
   const agents = await db.agent.findMany({ where: { workspaceId: ws } });
   for (const [i, a] of agents.entries()) {
     if (a.role === "transaction") continue;
-    await db.agent.update({ where: { id: a.id }, data: { retellAgentId: `agent_demo_${a.role}`, retellLlmId: `llm_demo_${a.role}`, version: 2 + (i % 3), voiceId: a.role.startsWith("buyer") || a.role === "disposition" ? "11labs-Brian" : "11labs-Adrian" } });
+    await db.agent.update({ where: { id: a.id }, data: { retellAgentId: `agent_demo_${a.role}`, retellLlmId: `llm_demo_${a.role}`, version: 2 + (i % 3), voiceId: a.role.startsWith("buyer") ? "11labs-Brian" : "11labs-Adrian" } });
   }
+
+  // ---------- email templates (designed emails) ----------
+  await (await import("./emails")).ensureStarterTemplates(ws);
 
   // ---------- templates ----------
   await db.contractTemplate.createMany({
@@ -1049,7 +1052,7 @@ async function seed(ws: string, ownerId: string) {
   const blockedReasons = ["TX requires recorded consent for AI-voice calls. Record consent, or call manually.", "On a Do Not Call list (dncscrub D)", "Known TCPA litigator / complainer (blacklist_alliance)", "Opted out", "Daily call limit for this contact reached"];
   for (const [ci, c] of campaigns.entries()) {
     const camp = await db.campaign.create({
-      data: { workspaceId: ws, kind: c.kind, name: c.name, status: c.status, state: c.state, market: c.market, channels: c.channels, opportunityId: c.opp, agentId: agentByRole[c.kind === "buyer" ? "buyer_acquisition" : c.kind === "disposition" ? "disposition" : "seller_acquisition"], version: 1 + (ci % 3), settings: json({ objective: c.objective, maxAttempts: 3, retryGapHours: 24, dailyCap: 150, concurrency: 3, smsTemplate: "Hi {{first_name}}, this is {{agent_name}} with {{company}}. Would you consider an offer on {{property_address}}?", filters: {}, budget: c.kind === "seller" ? 1500 : null }), createdAt: ago(between(5, 45)) },
+      data: { workspaceId: ws, kind: c.kind, name: c.name, status: c.status, state: c.state, market: c.market, channels: c.channels, opportunityId: c.opp, agentId: agentByRole[c.kind === "buyer" || c.kind === "disposition" ? "buyer_acquisition" : "seller_acquisition"], version: 1 + (ci % 3), settings: json({ objective: c.objective, maxAttempts: 3, retryGapHours: 24, dailyCap: 150, concurrency: 3, smsTemplate: "Hi {{first_name}}, this is {{agent_name}} with {{company}}. Would you consider an offer on {{property_address}}?", filters: {}, budget: c.kind === "seller" ? 1500 : null }), createdAt: ago(between(5, 45)) },
     });
     const uniq = [...new Set(c.members)];
     for (const [mi2, contactId] of uniq.entries()) {

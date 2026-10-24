@@ -1,3 +1,4 @@
+import { rolesFor } from "./agents";
 import type { Prisma } from "@prisma/client";
 import { setting } from "./config";
 import { db } from "./db";
@@ -42,5 +43,5 @@ export async function callStats(ws: string, where: Prisma.InteractionWhereInput,
 
 /** Which interactions belong to a role key ("team" = people's own calls). */
 export function roleWhere(role: string): Prisma.InteractionWhereInput {
-  return role === "team" ? { provider: "twilio" } : { provider: "retell", agentRole: role };
+  return role === "team" ? { provider: "twilio" } : { provider: "retell", agentRole: { in: rolesFor(role) } };
 }

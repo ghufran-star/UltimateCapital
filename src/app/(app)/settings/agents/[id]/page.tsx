@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import { ActionButton, ActionForm, Submit } from "@/components/client";
 import { Card, Field, PageHeader } from "@/components/ui";
-import { AGENT_ROLES, HARD_RULES, ROLE_TOOLS, TOOL_DEFS } from "@/lib/agents";
+import { canonicalRole, HARD_RULES, ROLE_TOOLS, roleLabel, TOOL_DEFS } from "@/lib/agents";
 import { db } from "@/lib/db";
 import { can, pageCtx } from "@/lib/session";
 import { restoreAgentAction, saveAgentAction, syncAgentAction, testAgentAction } from "../../../../actions/settings";
@@ -13,17 +13,17 @@ export default async function AgentPage({ params }: { params: Promise<{ id: stri
   const a = await db.agent.findFirst({ where: { id, workspaceId: c.workspace.id } });
   if (!a) notFound();
   const ro = !can(c.role, "settings");
-  const allowed = ROLE_TOOLS[a.role] || Object.keys(TOOL_DEFS);
+  const allowed = ROLE_TOOLS[canonicalRole(a.role)] || Object.keys(TOOL_DEFS);
   const [versions, sample] = await Promise.all([
     db.agentVersion.findMany({ where: { agentId: a.id }, orderBy: { version: "desc" }, take: 15 }),
-    db.contact.findMany({ where: { workspaceId: c.workspace.id, kind: ["buyer_acquisition", "disposition"].includes(a.role) ? "buyer" : "seller" }, orderBy: { updatedAt: "desc" }, take: 30, select: { id: true, firstName: true, lastName: true, company: true } }),
+    db.contact.findMany({ where: { workspaceId: c.workspace.id, kind: canonicalRole(a.role) === "buyer_acquisition" ? "buyer" : "seller" }, orderBy: { updatedAt: "desc" }, take: 30, select: { id: true, firstName: true, lastName: true, company: true } }),
   ]);
   return (
     <div className="max-w-4xl space-y-5">
       <PageHeader
         back={{ href: "/settings/agents", label: "AI agents" }}
         title={a.name}
-        sub={`${AGENT_ROLES.find((r) => r.key === a.role)?.label} · v${a.version}${a.retellAgentId ? ` · Retell ${a.retellAgentId}` : " · not synced"}`}
+        sub={`${roleLabel(a.role)} · v${a.version}${a.retellAgentId ? ` · Retell ${a.retellAgentId}` : " · not synced"}`}
         actions={!ro ? <ActionButton action={syncAgentAction} hidden={{ agentId: a.id }} className="btn btn-ghost">Sync to Retell</ActionButton> : null}
       />
       <ActionForm action={saveAgentAction} className="space-y-5">

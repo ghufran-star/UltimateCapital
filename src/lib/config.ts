@@ -37,8 +37,11 @@ export const SETTING_DEFS = [
   { key: "BANK_API_KEY", label: "Bank API token", secret: true, group: "Money", help: "Mercury read-only API token." },
   { key: "COST_PER_CALL_MINUTE", label: "Cost per AI call minute ($)", secret: false, group: "Costs", help: "Used for campaign budgets and spend reports. Default 0.12 (Retell + telephony)." },
   { key: "COST_PER_SMS", label: "Cost per text ($)", secret: false, group: "Costs", help: "Default 0.015 (Twilio + carrier fees)." },
+  { key: "COST_PER_LIST_RECORD", label: "Cost per list record ($)", secret: false, group: "Costs", help: "What your data provider charges per property pulled. Default 0.02. Shown before you buy a list." },
+  { key: "COST_PER_SKIP_TRACE", label: "Cost per skip trace ($)", secret: false, group: "Costs", help: "Per owner looked up for phones and emails. Default 0.10." },
   { key: "PUBLIC_URL", label: "Public app URL", secret: false, group: "General", help: "e.g. https://ultimatecapital.up.railway.app — used for signing links and webhooks." },
   { key: "COMPANY_NAME", label: "Company name", secret: false, group: "General", help: "Used by agents and on documents." },
+  { key: "BUSINESS_ADDRESS", label: "Business postal address", secret: false, group: "General", help: "Required at the bottom of every marketing email (CAN-SPAM). e.g. 123 Main St, Suite 4, Houston, TX 77001" },
 ] as const;
 export type SettingKey = (typeof SETTING_DEFS)[number]["key"];
 
@@ -99,6 +102,7 @@ const STANDIN_KEYS: Partial<Record<SettingKey, string>> = {
 };
 const STANDIN_PLAIN: Partial<Record<SettingKey, string>> = {
   EMAIL_FROM: "deals@demo.example.com",
+  BUSINESS_ADDRESS: "100 Sample St, Suite 1, Houston, TX 77001 (test mode)",
   INBOUND_EMAIL_DOMAIN: "deals.example.com",
   PROPERTY_DATA_PROVIDER: "batchdata",
   DNC_PROVIDER: "dncscrub",

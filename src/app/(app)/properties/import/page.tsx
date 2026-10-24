@@ -1,39 +1,43 @@
+import Link from "next/link";
 import { ActionForm, Submit } from "@/components/client";
+import { CampaignChoice } from "@/components/listparts";
 import { Card, Field, Notice, PageHeader } from "@/components/ui";
 import { db } from "@/lib/db";
 import { pageCtx } from "@/lib/session";
-import { importSellersAction } from "../../../actions/records";
+import { getCompliance } from "@/lib/switches";
+import { importSellerFileAction } from "../../../actions/leads";
 
 export default async function ImportSellers() {
   const c = await pageCtx();
-  const campaigns = await db.campaign.findMany({ where: { workspaceId: c.workspace.id, kind: "seller" }, orderBy: { createdAt: "desc" } });
+  const [campaigns, sw] = await Promise.all([
+    db.campaign.findMany({ where: { workspaceId: c.workspace.id, kind: "seller", status: { in: ["draft", "running", "paused"] } }, orderBy: { updatedAt: "desc" }, select: { id: true, name: true } }),
+    getCompliance(c.workspace.id),
+  ]);
   return (
     <div className="max-w-3xl space-y-5">
-      <PageHeader title="Import sellers" back={{ href: "/properties", label: "Sellers & properties" }} sub="A CSV from your list provider or skip-trace. Duplicates (same phone, or same address and ZIP) are merged." />
+      <PageHeader title="Upload a seller list" back={{ href: "/properties", label: "Sellers" }} sub="Export from PropStream or BatchLeads (or any spreadsheet saved as CSV) and upload it as it is. The columns are recognised for you." />
       <Card>
-        <ActionForm action={importSellersAction}>
-          <Field label="CSV file">
+        <ActionForm action={importSellerFileAction}>
+          <Field label="The file (.csv)">
             <input type="file" name="file" accept=".csv,text/csv" className="field" />
           </Field>
-          <Field label="…or paste CSV">
-            <textarea name="csv" rows={6} className="field font-mono text-xs" placeholder={"address,city,state,zip,first_name,last_name,phone,email,beds,baths,sqft,condition\n123 Main St,Houston,TX,77001,Jane,Doe,7135550100,,3,2,1400,moderate"} />
+          <Field label="Name this list" hint="Optional. Shown on the campaign, e.g. Harris County absentee, October.">
+            <input name="label" className="field" placeholder="Harris County absentee · Oct" />
           </Field>
-          <Field label="Add to campaign (optional)">
-            <select name="campaignId" className="field">
-              <option value="">No campaign</option>
-              {campaigns.map((x) => (
-                <option key={x.id} value={x.id}>
-                  {x.name}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Submit pendingText="Importing…">Import</Submit>
+          <details>
+            <summary className="cursor-pointer text-sm text-muted">Or paste the rows instead</summary>
+            <textarea name="csv" rows={5} className="field mt-2 font-mono text-xs" placeholder={"address,city,state,zip,first_name,last_name,phone,email\n123 Main St,Houston,TX,77001,Jane,Doe,7135550100,"} />
+          </details>
+          <CampaignChoice campaigns={campaigns} cold={sw.coldOutreach} />
+          <Submit pendingText="Reading the list…">Upload</Submit>
         </ActionForm>
       </Card>
       <Notice tone="info">
-        Columns recognised: address, city, state, zip, county, property_type, beds, baths, sqft, year_built, occupancy, condition, first_name, last_name (or owner), phone, phone2, email, tags. Every number is checked against your DNC lists and State Pack rules before anyone is contacted.
+        <b>What happens:</b> owners already on file are merged, not duplicated. Every phone number is checked against Do Not Call lists, numbers flagged as litigators are blocked for good, and the owner&apos;s mailing address is used for calling hours. Recognised automatically: PropStream (Owner 1/2 names, Mailing address, Est. value, Est. remaining balance, Phone 1–5), BatchLeads (Property address, Owner first/last name, Mailing address, Phone 1…, DNC flags), BatchData, and plain columns like address, city, state, zip, owner, phone, email.
       </Notice>
+      <p className="text-sm text-muted">
+        No file? <Link href="/properties/find" className="underline">Buy a list from BatchData</Link> by state and county instead.
+      </p>
     </div>
   );
 }

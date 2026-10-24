@@ -325,6 +325,8 @@ Rules:
       await emit(ws, "property.changed", { type: "property", id: opp.propertyId });
     }
     if (oppData.sellerLowest) await emit(ws, "opportunity.seller_moved", { type: "opportunity", id: opp.id });
+    // The seller just gave a price for the first time: now it's worth checking sold comparables.
+    if (oppData.askingPrice && !opp.askingPrice && !opp.sellerLowest) await emit(ws, "opportunity.facts_changed", { type: "opportunity", id: opp.id });
   }
 
   // ----- buyer response to a presented deal -----

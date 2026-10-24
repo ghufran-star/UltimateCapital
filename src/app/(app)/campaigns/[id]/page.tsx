@@ -16,11 +16,12 @@ export default async function CampaignPage({ params }: { params: Promise<{ id: s
   const { id } = await params;
   const camp = await db.campaign.findFirst({ where: { id, workspaceId: c.workspace.id } });
   if (!camp) notFound();
-  const [members, counts, agents, outcomes, pack] = await Promise.all([
+  const [members, counts, agents, outcomes, emails, pack] = await Promise.all([
     db.campaignMember.findMany({ where: { campaignId: id }, include: { contact: true }, orderBy: [{ status: "asc" }, { nextAttemptAt: "asc" }], take: 200 }),
     db.campaignMember.groupBy({ by: ["status"], where: { campaignId: id }, _count: true }),
     db.agent.findMany({ where: { workspaceId: c.workspace.id, active: true } }),
     db.interaction.groupBy({ by: ["outcome"], where: { workspaceId: c.workspace.id, campaignId: id }, _count: true }),
+    db.emailTemplate.findMany({ where: { workspaceId: c.workspace.id, active: true }, select: { id: true, name: true } }),
     camp.state ? db.statePack.findUnique({ where: { workspaceId_state: { workspaceId: c.workspace.id, state: camp.state } } }) : null,
   ]);
   const spend = await campaignSpend(c.workspace.id, id);
@@ -133,7 +134,7 @@ export default async function CampaignPage({ params }: { params: Promise<{ id: s
             <Empty title="No contacts yet" />
           )}
         </Card>
-        <Card title="Settings">{writable ? <CampaignForm camp={camp} agents={agents} /> : <p className="text-sm text-muted">View only.</p>}</Card>
+        <Card title="Settings">{writable ? <CampaignForm camp={camp} agents={agents} emails={emails} /> : <p className="text-sm text-muted">View only.</p>}</Card>
       </div>
     </div>
   );

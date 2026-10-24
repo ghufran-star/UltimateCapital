@@ -137,9 +137,9 @@ async function Tasks({ ws, who, writable, userId }: { ws: string; who: string; w
                                 {m.user.name}
                               </option>
                             ))}
-                            {["seller_acquisition", "property_discovery", "negotiation", "buyer_acquisition", "disposition", "transaction"].map((r) => (
+                            {[["seller_acquisition", "Seller caller"], ["buyer_acquisition", "Buyer caller"]].map(([r, l]) => (
                               <option key={r} value={`agent:${r}`}>
-                                AI: {r.replace(/_/g, " ")}
+                                AI: {l}
                               </option>
                             ))}
                           </select>

@@ -43,6 +43,7 @@ model Workspace {
   invites       Invite[]
   notifications Notification[]
   phoneChecks   PhoneCheck[]
+  emailTemplates EmailTemplate[]
 }
 
 model User {
@@ -134,8 +135,12 @@ model Contact {
   phone       String?
   phone2      String?
   email       String?
-  state       String? // home state (2 letters)
+  state       String? // home state (2 letters): the owner's mailing address when known
   city        String?
+  mailingAddress String? // owner's mailing street (absentee owners live elsewhere)
+  mailingCity String?
+  mailingZip  String?
+  source      String? // where they came from: list:batchdata | list:propstream | list:batchleads | list:csv | form | inbound | manual
   timezone    String?
   assigneeId  String? // user id or "agent:<role>"
   tags        String[] @default([])
@@ -871,6 +876,28 @@ model LoginAttempt {
   createdAt DateTime @default(now())
 
   @@index([key, createdAt])
+}
+
+// Email templates: designed emails with merge fields. A footer with the business address and a
+// one-click unsubscribe is always added when sent.
+model EmailTemplate {
+  id          String   @id @default(cuid())
+  workspaceId String
+  name        String
+  audience    String   @default("seller") // seller | buyer | any
+  subject     String
+  body        String // plain text with {{merge_fields}}; blank lines make paragraphs
+  design      String   @default("letter") // letter | card | banner
+  accent      String   @default("#0f766e")
+  buttonText  String?
+  buttonUrl   String? // may hold merge fields, e.g. {{offer_form_url}}
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId])
 }
 
 // Owner kill switches: everything, a state, a channel or an agent role.

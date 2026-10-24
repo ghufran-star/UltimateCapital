@@ -5,19 +5,60 @@ import { createTask, emit } from "./engine";
 import type { StatePackData } from "./states";
 import { fill, fullName } from "./util";
 
-// AI agents. Each call's instructions are built from six layers:
-// 1 role (editable) · 2 hard rules (fixed) · 3 State Pack (automatic) · 4 playbook (editable)
-// 5 live context (automatic) · 6 tools (editable per agent).
+// AI agents: three callers, each working in stages.
+//   Seller caller: first conversation (information and the seller's price only, never an offer),
+//                  follow-up (fill in what's missing), offer (present and negotiate within authority).
+//   Buyer caller:  getting to know an investor, then presenting a deal.
+//   Receptionist:  incoming calls.
+// Each call's instructions are built from layers: role (editable) · hard rules (fixed) · state rules (automatic)
+// · playbook (editable) · this call's stage (automatic) · live context (automatic) · tools.
 
 export const AGENT_ROLES = [
-  { key: "seller_acquisition", label: "Seller Acquisition", side: "seller" },
-  { key: "property_discovery", label: "Property Discovery", side: "seller" },
-  { key: "negotiation", label: "Negotiation", side: "seller" },
-  { key: "buyer_acquisition", label: "Buyer Acquisition", side: "buyer" },
-  { key: "disposition", label: "Buyer Relationship / Disposition", side: "buyer" },
-  { key: "receptionist", label: "Inbound Receptionist", side: "any" },
-  { key: "transaction", label: "Transaction Coordinator (email & text)", side: "any" },
+  { key: "seller_acquisition", label: "Seller caller", side: "seller" },
+  { key: "buyer_acquisition", label: "Buyer caller", side: "buyer" },
+  { key: "receptionist", label: "Receptionist", side: "any" },
 ] as const;
+
+/** Older agent roles (before the 7 → 3 merge) and the caller that now does their job. */
+export const LEGACY_ROLES: Record<string, string> = {
+  property_discovery: "seller_acquisition",
+  negotiation: "seller_acquisition",
+  transaction: "seller_acquisition",
+  disposition: "buyer_acquisition",
+};
+const LEGACY_LABEL: Record<string, string> = {
+  property_discovery: "Seller caller (follow-up)",
+  negotiation: "Seller caller (offer)",
+  transaction: "Transaction coordinator (retired)",
+  disposition: "Buyer caller (deal)",
+};
+export const canonicalRole = (r?: string | null) => (r ? LEGACY_ROLES[r] || r : "seller_acquisition");
+/** Every role key whose calls belong to this caller (for history and stats). */
+export const rolesFor = (r: string) => [r, ...Object.keys(LEGACY_ROLES).filter((k) => LEGACY_ROLES[k] === r)];
+export const roleLabel = (r?: string | null) => (r ? (AGENT_ROLES.find((a) => a.key === r)?.label as string) || LEGACY_LABEL[r] || r.replace(/_/g, " ") : "");
+
+/** Call stages. The first conversation with a seller is information and price only. */
+export const CALL_STAGES = {
+  first: "First conversation",
+  discovery: "Follow-up",
+  offer: "Offer",
+  intro: "Getting to know the investor",
+  deal: "Presenting a deal",
+  inbound: "Incoming call",
+} as const;
+export type CallStage = keyof typeof CALL_STAGES;
+
+const STAGE_RULES: Record<CallStage, string> = {
+  first:
+    "THIS IS THE FIRST CONVERSATION. Your only goals: understand the property, their situation and timeline, and find out what price they have in mind. NEVER make an offer, name a number, or negotiate on this call, even if they ask for one: say you'll review everything and come back with a written offer, usually within a day or two. When they give a price, log it with record_offer (by: them).",
+  discovery:
+    "FOLLOW-UP CONVERSATION. Fill in what's still missing (OPEN QUESTIONS), confirm their price and timeline, and offer to receive photos by text. Our offer isn't ready yet: don't name a number. If they push, say the written offer is being prepared.",
+  offer:
+    "OFFER CONVERSATION. Recap what they told us, explain our offer honestly (as-is, cash, no agent fees, close on their timeline, repairs needed), and negotiate. Call get_offer_authority before naming any number and never go beyond it; log every offer with record_offer; use request_approval for anything above your authority.",
+  intro: "GETTING TO KNOW THE INVESTOR. Learn exactly what they buy, how they fund and how fast they close. Don't pitch a specific property unless DEAL DETAILS are given.",
+  deal: "PRESENTING A DEAL. Describe it using only DEAL DETAILS, follow the marketing note, call get_buyer_price before naming a price, and record their interest with record_buyer_interest.",
+  inbound: "INCOMING CALL. Find out who they are and why they're calling, then help or book a callback.",
+};
 
 export const TOOL_DEFS: Record<string, { description: string; properties: Record<string, unknown>; required?: string[]; say?: string }> = {
   record_fact: {
@@ -43,15 +84,15 @@ export const TOOL_DEFS: Record<string, { description: string; properties: Record
     say: "I'll text that over to you now.",
   },
   get_offer_authority: {
-    description: "Before stating ANY price to a seller, call this. It tells you the only price you may offer now and how far you may go if they counter.",
+    description: "Before stating ANY price to a seller, call this. It tells you the only price you may offer now and how far you may go if they counter. On a first conversation it will tell you not to offer.",
     properties: { seller_price: { type: "number", description: "The seller's latest price, if they named one" } },
     say: "Let me just check something.",
   },
   record_offer: {
-    description: "Log an offer as soon as it is made, by us or by them.",
+    description: "Log a price as soon as it is said, by us or by them. Use by: them for the seller's asking price.",
     properties: {
       price: { type: "number", description: "The price" },
-      by: { type: "string", enum: ["us", "them"], description: "Who made it" },
+      by: { type: "string", enum: ["us", "them"], description: "Who said it" },
       terms: { type: "string", description: "Any terms mentioned (closing time, as-is, who pays costs)" },
     },
     required: ["price", "by"],
@@ -88,18 +129,15 @@ export const TOOL_DEFS: Record<string, { description: string; properties: Record
 
 export const ROLE_TOOLS: Record<string, string[]> = {
   seller_acquisition: ["record_fact", "schedule_callback", "send_text", "get_offer_authority", "record_offer", "request_approval", "mark_do_not_contact"],
-  property_discovery: ["record_fact", "schedule_callback", "send_text", "mark_do_not_contact"],
-  negotiation: ["record_fact", "schedule_callback", "send_text", "get_offer_authority", "record_offer", "request_approval", "mark_do_not_contact"],
-  buyer_acquisition: ["record_fact", "schedule_callback", "send_text", "mark_do_not_contact"],
-  disposition: ["record_fact", "schedule_callback", "send_text", "get_buyer_price", "record_buyer_interest", "record_offer", "request_approval", "mark_do_not_contact"],
+  buyer_acquisition: ["record_fact", "schedule_callback", "send_text", "get_buyer_price", "record_buyer_interest", "record_offer", "request_approval", "mark_do_not_contact"],
   receptionist: ["record_fact", "schedule_callback", "send_text", "mark_do_not_contact"],
-  transaction: ["record_fact", "schedule_callback", "send_text"],
 };
 
 export const HARD_RULES = `HARD RULES (these override everything else):
-- Say who you are and the company name at the start: {{identification}} {{ai_disclosure}}
+- Say who you are and the company name at the start: {{identification}} {{ai_disclosure}} {{recording_notice}}
 - Never misrepresent anything: who we are, that we own a property, available funding, property condition, deadlines, ARV, repairs, competing offers or buyer commitments. If you don't know, say you'll find out.
 - Never state a price you didn't get from get_offer_authority or get_buyer_price. Never go beyond what it allows. If asked for more, use request_approval.
+- Never make an offer to a seller on the first conversation. The first call is for information and their price only.
 - A verbal agreement is never a contract. Say the paperwork will follow for them to review.
 - If the person asks not to be contacted, use mark_do_not_contact immediately, apologise and end the call.
 - Don't give legal, tax or financial advice. Suggest they speak to their own professional.
@@ -109,33 +147,15 @@ export const HARD_RULES = `HARD RULES (these override everything else):
 const DEFAULTS: Record<string, { persona: string; playbook: string }> = {
   seller_acquisition: {
     persona:
-      "You are {{agent_name}}, calling homeowners for {{company}}, a local company that buys houses for cash, as-is. Your goal is to find out whether {{contact_name}} would consider selling {{property_address}} and, if so, why, when, at what price, who else decides, and the property's condition.",
+      "You are {{agent_name}}, calling homeowners for {{company}}, a local company that buys houses for cash, as-is. You're speaking with {{contact_name}} about {{property_address}}.",
     playbook:
-      "1. Introduce yourself and ask if they'd ever consider an offer on {{property_address}}.\n2. If open: ask what's got them thinking about it (motivation), and when they'd ideally like to sell (timeline).\n3. Ask whether anyone else is on the title or involved in the decision.\n4. Ask about condition room by room in a relaxed way: roof age, HVAC, plumbing/electrical issues, kitchen and baths, foundation, anything needing repair. Record each answer with record_fact.\n5. Ask if it's occupied (them, tenants, vacant).\n6. Ask what price they have in mind. If they ask for our offer, use get_offer_authority first.\n7. Agree a next step: a callback with the decision maker, photos by text, or a written offer.\nObjections: 'not interested' → thank them, ask if it's ok to check back in a few months. 'Price too low' → ask what number works and why, log it with record_offer by them.",
-  },
-  property_discovery: {
-    persona:
-      "You are {{agent_name}} from {{company}}. {{contact_name}} is interested in selling {{property_address}}. Your goal is to complete the property picture so we can make a fair offer.",
-    playbook:
-      "Go through what's still missing in OPEN QUESTIONS: roof (age, leaks), foundation, HVAC age, water heater, plumbing, electrical, kitchen, bathrooms, flooring, windows, exterior, any damage, renovations done, occupancy and leases, access for a walkthrough, any liens, back taxes or mortgage. Record every answer with record_fact. Offer to receive photos by text (send_text with a short request).",
-  },
-  negotiation: {
-    persona:
-      "You are {{agent_name}} from {{company}}. You're following up with {{contact_name}} about our offer on {{property_address}}. Your goal is to reach terms the seller is happy with, within your authority.",
-    playbook:
-      "1. Recap what they told us (motivation, timeline) to show you listened.\n2. Explain our offer's reasoning honestly: as-is, cash, no agent fees, close on their timeline, repairs needed (from KNOWN FACTS).\n3. Use get_offer_authority before naming any number; log every offer with record_offer.\n4. If they counter above your authority, use request_approval and say you'll confirm shortly.\n5. If they agree, say the written agreement will be sent for them to review and sign, and confirm their email and mobile.",
+      "FIRST CONVERSATION (information and price only):\n1. Introduce yourself and ask if they'd ever consider selling {{property_address}}.\n2. If open: what's got them thinking about it (motivation), and when they'd ideally like to sell (timeline).\n3. Anyone else on the title or involved in the decision?\n4. Condition in a relaxed way: roof age, HVAC, plumbing/electrical, kitchen and baths, foundation, anything needing repair. Record each answer with record_fact.\n5. Occupied by them, tenants, or vacant?\n6. What price do they have in mind? Log it with record_offer (by: them). Don't counter, don't offer.\n7. Agree a next step: we'll review and come back with a written offer; ask the best time and number to reach them.\n\nFOLLOW-UP: go through OPEN QUESTIONS (roof, foundation, HVAC, water heater, plumbing, electrical, kitchen, baths, flooring, windows, exterior, damage, renovations, occupancy and leases, access for a walkthrough, liens, back taxes, mortgage). Offer to receive photos by text.\n\nOFFER: recap their situation, explain our offer's reasoning honestly, use get_offer_authority before any number, log every offer, use request_approval above your authority. If they agree, say the written agreement will be sent to review and sign, and confirm their email and mobile.\n\nObjections: 'not interested' → thank them, ask if it's ok to check back in a few months. 'Price too low' (offer calls) → ask what number works and why, log it with record_offer by them.",
   },
   buyer_acquisition: {
     persona:
-      "You are {{agent_name}} from {{company}}. We find off-market investment properties and share them with investors. Your goal is to learn whether {{contact_name}} buys investment property and exactly what they buy.",
+      "You are {{agent_name}} from {{company}}. We find off-market investment properties and share them with investors. You're speaking with {{contact_name}}.",
     playbook:
-      "Learn naturally over the conversation (record each with record_fact): markets/ZIPs they buy in and avoid; property types; strategy (flip, rental, BRRRR); price range and max; how much rehab they'll take on; required profit or returns; how they fund (cash, hard money) and proof of funds; how fast they close; how many deals they buy per month and when they're next buying; how they want deals sent (text, email, call) and how often.",
-  },
-  disposition: {
-    persona:
-      "You are {{agent_name}} from {{company}}. You're telling {{contact_name}} about an investment opportunity that matches what they buy. Your goal is to gauge genuine interest and get a commitment or a clear no.",
-    playbook:
-      "Describe the deal using only DEAL DETAILS. {{marketing_note}}\nUse get_buyer_price before naming a price. Ask what they'd pay and what they need to decide (walkthrough, photos, inspection). Record interest with record_buyer_interest (serious = asked for details, walkthrough, offer, or confirmed funds). Log offers with record_offer.",
+      "GETTING TO KNOW THEM (record each with record_fact): markets/ZIPs they buy in and avoid; property types; strategy (flip, rental, BRRRR); price range and max; how much rehab they'll take on; required profit or returns; how they fund (cash, hard money) and proof of funds; how fast they close; how many deals a month and when they're next buying; how they want deals sent (text, email, call) and how often.\n\nPRESENTING A DEAL: describe it using only DEAL DETAILS. {{marketing_note}}\nUse get_buyer_price before naming a price. Ask what they'd pay and what they need to decide (walkthrough, photos, inspection). Record interest with record_buyer_interest (serious = asked for details, walkthrough, offer, or confirmed funds). Log offers with record_offer.",
   },
   receptionist: {
     persona:
@@ -143,33 +163,75 @@ const DEFAULTS: Record<string, { persona: string; playbook: string }> = {
     playbook:
       "Find out who they are and why they're calling. If KNOWN FACTS show who they are, greet them by name and continue from the last conversation. Sellers: get the property address, what they're looking for, best time to call. Investors: what they buy. Title/other: take a message. Book callbacks with schedule_callback.",
   },
-  transaction: {
-    persona: "You are {{agent_name}}, transaction coordinator at {{company}}.",
-    playbook: "Keep closings moving: confirm documents received, remind about deadlines, never discuss price changes.",
-  },
 };
 
+/** The previous default playbooks, so untouched agents can be upgraded to the staged versions. */
+const OLD_SELLER_PLAYBOOK_START = "1. Introduce yourself and ask if they'd ever consider an offer on {{property_address}}.";
+const OLD_BUYER_PLAYBOOK_START = "Learn naturally over the conversation (record each with record_fact)";
+
+/** Three callers per workspace. Older 7-agent setups are merged: the extra agents are switched off, untouched prompts upgraded. */
 export async function ensureDefaultAgents(ws: string) {
   const company = (await setting(ws, "COMPANY_NAME")) || "UltimateCapital";
   for (const r of AGENT_ROLES) {
     const exists = await db.agent.findFirst({ where: { workspaceId: ws, role: r.key } });
-    if (exists) continue;
-    await db.agent.create({
-      data: {
-        workspaceId: ws,
-        role: r.key,
-        name: r.key === "receptionist" ? "Sam" : r.key.startsWith("buyer") || r.key === "disposition" ? "Jordan" : "Alex",
-        persona: DEFAULTS[r.key].persona,
-        playbook: DEFAULTS[r.key].playbook,
-        tools: ROLE_TOOLS[r.key],
-      },
-    });
+    if (!exists) {
+      await db.agent.create({
+        data: {
+          workspaceId: ws,
+          role: r.key,
+          name: r.key === "receptionist" ? "Sam" : r.key === "buyer_acquisition" ? "Jordan" : "Alex",
+          persona: DEFAULTS[r.key].persona,
+          playbook: DEFAULTS[r.key].playbook,
+          tools: ROLE_TOOLS[r.key],
+        },
+      });
+      continue;
+    }
+    const tools = [...new Set([...exists.tools.filter((t) => TOOL_DEFS[t]), ...ROLE_TOOLS[r.key]])];
+    const untouched = exists.playbook.startsWith(OLD_SELLER_PLAYBOOK_START) || exists.playbook.startsWith(OLD_BUYER_PLAYBOOK_START);
+    const changed = untouched || tools.length !== exists.tools.length || !exists.active;
+    if (changed)
+      await db.agent.update({
+        where: { id: exists.id },
+        data: { tools, active: true, ...(untouched ? { persona: DEFAULTS[r.key].persona, playbook: DEFAULTS[r.key].playbook, version: { increment: 1 } } : {}) },
+      });
+    // The fixed parts of the prompt (hard rules, this call's stage) change with app updates: re-send once per start.
+    if (exists.retellAgentId) await syncAgent(ws, exists.id).catch((e) => console.error("[agents] resync", e instanceof Error ? e.message : e));
   }
+  await db.agent.updateMany({ where: { workspaceId: ws, role: { in: Object.keys(LEGACY_ROLES) }, active: true }, data: { active: false } });
   return company;
 }
 
 export async function agentForRole(ws: string, role: string) {
-  return db.agent.findFirst({ where: { workspaceId: ws, role, active: true }, orderBy: { updatedAt: "desc" } });
+  const key = canonicalRole(role);
+  return (
+    (await db.agent.findFirst({ where: { workspaceId: ws, role: key, active: true }, orderBy: { updatedAt: "desc" } })) ||
+    (await db.agent.findFirst({ where: { workspaceId: ws, role: { in: rolesFor(key) } }, orderBy: [{ active: "desc" }, { updatedAt: "desc" }] }))
+  );
+}
+
+/** Which stage this call is in. A seller's first real conversation is always the information-and-price call. */
+export async function callStageFor(ws: string, o: { contactId: string; requestedRole: string; opportunityId?: string | null; inbound?: boolean }): Promise<CallStage> {
+  if (o.inbound) return "inbound";
+  const role = canonicalRole(o.requestedRole);
+  if (role === "receptionist") return "inbound";
+  if (role === "buyer_acquisition") return o.opportunityId || o.requestedRole === "disposition" ? "deal" : "intro";
+  const talked = await db.interaction.count({
+    where: {
+      workspaceId: ws,
+      contactId: o.contactId,
+      OR: [
+        { channel: "call", outcome: { in: ["conversation", "interested", "callback", "not_now", "price_high", "offer_discussed"] } },
+        { channel: "call", durationSec: { gte: 45 } },
+        { channel: { in: ["sms", "email"] }, direction: "inbound" },
+      ],
+    },
+  });
+  if (!talked) return "first";
+  if (o.requestedRole === "negotiation") return "offer";
+  if (o.requestedRole === "property_discovery") return "discovery";
+  const opp = o.opportunityId ? await db.opportunity.findUnique({ where: { id: o.opportunityId }, select: { stage: true } }) : null;
+  return opp && ["OFFER_READY", "NEGOTIATION", "CONTRACT_PREPARATION"].includes(opp.stage) ? "offer" : "discovery";
 }
 
 /** The full general prompt sent to Retell. Live context arrives per call as dynamic variables. */
@@ -183,6 +245,9 @@ STATE RULES:
 
 PLAYBOOK:
 ${a.playbook}
+
+THIS CALL:
+{{call_stage}}
 
 LIVE CONTEXT (from our records, may be partial):
 {{context}}
@@ -268,7 +333,7 @@ export async function transferNumber(ws: string, assigneeId?: string | null) {
 /** Layer 3 + 5: per-call dynamic variables. */
 export async function buildDynamicVariables(
   ws: string,
-  o: { contactId: string; opportunityId?: string; agentId: string; pack?: StatePackData }
+  o: { contactId: string; opportunityId?: string; agentId: string; pack?: StatePackData; stage?: CallStage }
 ): Promise<Record<string, string>> {
   const [contact, agent, company] = await Promise.all([
     db.contact.findUniqueOrThrow({ where: { id: o.contactId }, include: { ownerships: { include: { property: true } }, buyBoxes: true } }),
@@ -294,7 +359,12 @@ export async function buildDynamicVariables(
   };
   const pack = o.pack;
   vars.identification = fill(pack?.outreach.identification || "This is {{agent_name}} with {{company}}.", vars);
-  vars.ai_disclosure = fill(pack?.outreach.aiDisclosure || "", vars);
+  const { complianceFor } = await import("./switches");
+  const sw = await complianceFor(ws, property?.state || contact.state);
+  vars.ai_disclosure = sw.aiDisclosure ? fill(pack?.outreach.aiDisclosure || "Just so you know, I'm an AI assistant calling on behalf of {{company}}.", vars) : "";
+  vars.recording_notice = sw.recordingNotice ? "Mention that the call is recorded for quality." : "";
+  const stage: CallStage = o.stage || (agent.role === "receptionist" ? "inbound" : contact.kind === "buyer" ? (opp ? "deal" : "intro") : "discovery");
+  vars.call_stage = `${CALL_STAGES[stage]}. ${STAGE_RULES[stage]}`;
   vars.state_rules = pack
     ? [
         `Disclosure when presenting a contract interest: ${pack.wholesaling.disclosureText}`,
@@ -318,7 +388,7 @@ export async function buildDynamicVariables(
   vars.open_questions = contact.openQuestions.length ? contact.openQuestions.map((q) => `- ${q}`).join("\n") : "None listed.";
   vars.deal_details = "";
   vars.marketing_note = "";
-  if (opp && agent.role === "disposition" && property) {
+  if (opp && canonicalRole(agent.role) === "buyer_acquisition" && property) {
     const v = opp.valuations[0];
     const anonymous = !["UNDER_CONTRACT", "DISPOSITION", "CLOSING"].includes(opp.stage);
     vars.marketing_note = anonymous
@@ -382,6 +452,8 @@ export async function handleTool(ws: string, name: string, args: Record<string, 
       return { ok: !r.startsWith("Blocked"), result: r.startsWith("Blocked") ? "Texts aren't allowed to this number; offer email instead." : "Sent." };
     }
     case "get_offer_authority": {
+      if (meta.callStage === "first") return { ok: true, result: "This is the first conversation: don't make an offer or name any number. Thank them for their price, say we'll review everything and come back with a written offer, and agree the best time to reach them." };
+      if (meta.callStage === "discovery") return { ok: true, result: "Our offer isn't ready yet: don't name a number. Say we're preparing a written offer and will be back in touch shortly." };
       if (!opportunityId) return { ok: false, result: "No deal on file yet. Don't name a price; say we'll prepare a written offer." };
       const { sellerAuthorityFor } = await import("./deals");
       const a = await sellerAuthorityFor(ws, opportunityId, typeof args.seller_price === "number" ? args.seller_price : null, actor);
@@ -396,15 +468,18 @@ export async function handleTool(ws: string, name: string, args: Record<string, 
     case "record_offer": {
       if (!opportunityId) return { ok: true };
       const opp = await db.opportunity.findUniqueOrThrow({ where: { id: opportunityId } });
-      const isBuyerSide = meta.agentRole === "disposition";
+      const isBuyerSide = canonicalRole(meta.agentRole) === "buyer_acquisition";
       const price = Math.round(Number(args.price || 0));
       if (!price) return { ok: false, result: "No price given." };
       const by = args.by === "us" ? "us" : "them";
+      if (by === "us" && !isBuyerSide && meta.callStage && meta.callStage !== "offer") return { ok: false, result: "No offers on this call. Don't name a number; say a written offer will follow." };
       const round = (await db.offer.count({ where: { opportunityId, side: isBuyerSide ? "buyer" : "seller", contactId } })) + 1;
       await db.offer.create({ data: { opportunityId, side: isBuyerSide ? "buyer" : "seller", contactId, round, price, by, terms: args.terms ? json({ text: String(args.terms) }) : undefined, authority: by === "us" ? "rule" : null } });
       if (!isBuyerSide && by === "them" && (!opp.sellerLowest || price < opp.sellerLowest)) {
         await db.opportunity.update({ where: { id: opportunityId }, data: { sellerLowest: price, stage: opp.stage === "OFFER_READY" ? "NEGOTIATION" : opp.stage } });
         await emit(ws, "opportunity.seller_moved", { type: "opportunity", id: opportunityId });
+        // First price from the seller: check sold comparables now (not before: each lookup costs money).
+        if (!opp.sellerLowest && !opp.askingPrice) await emit(ws, "opportunity.facts_changed", { type: "opportunity", id: opportunityId });
       }
       if (isBuyerSide && by === "them") {
         await db.buyerInterest.updateMany({ where: { opportunityId, contactId }, data: { priceMentioned: price, stage: "OFFER_SUBMITTED", serious: true } });

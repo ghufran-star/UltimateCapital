@@ -87,20 +87,23 @@ export async function placeCall(
     await audit(ws, "system", "call_blocked", { type: "contact", id: o.contactId }, { meta: { reason: elig.reason } });
     return `Blocked: ${elig.reason}`;
   }
-  const rolePause = await (await import("./controls")).pauseReason(ws, { role: o.agentRole });
+  const { agentForRole, buildDynamicVariables, syncAgent, canonicalRole, callStageFor } = await import("./agents");
+  const role = canonicalRole(o.agentRole);
+  const controls = await import("./controls");
+  const rolePause = (await controls.pauseReason(ws, { role })) || (role !== o.agentRole ? await controls.pauseReason(ws, { role: o.agentRole }) : null);
   if (rolePause) {
     if (o.memberId) await db.campaignMember.update({ where: { id: o.memberId }, data: { status: "retry", nextAttemptAt: new Date(Date.now() + 30 * 60_000), lastOutcome: "paused" } }).catch(() => null);
     return `Rescheduled: ${rolePause}`;
   }
   const contact = await db.contact.findUniqueOrThrow({ where: { id: o.contactId } });
-  const { agentForRole, buildDynamicVariables, syncAgent } = await import("./agents");
-  const agent = await agentForRole(ws, o.agentRole);
+  const agent = await agentForRole(ws, role);
   if (!agent) throw new Error(`No active agent for role ${o.agentRole}. Set one up in Settings → Agents.`);
   const retellAgentId = agent.retellAgentId || (await syncAgent(ws, agent.id));
   const state = (await import("./eligibility")).governingState;
   const from = await fromNumber(ws, await state(ws, o.contactId));
   if (!from) throw new Error("No phone number set up. Add one in Settings → Phone numbers.");
-  const vars = await buildDynamicVariables(ws, { contactId: o.contactId, opportunityId: o.opportunityId, agentId: agent.id, pack: elig.pack });
+  const stage = await callStageFor(ws, { contactId: o.contactId, requestedRole: o.agentRole, opportunityId: o.opportunityId });
+  const vars = await buildDynamicVariables(ws, { contactId: o.contactId, opportunityId: o.opportunityId, agentId: agent.id, pack: elig.pack, stage });
 
   const it = await db.interaction.create({
     data: {
@@ -114,8 +117,8 @@ export async function placeCall(
       status: "queued",
       fromAddr: from.number,
       toAddr: e164(contact.phone),
-      intel: json({ agentRole: o.agentRole, memberId: o.memberId }),
-      agentRole: o.agentRole,
+      intel: json({ agentRole: role, callStage: stage, memberId: o.memberId }),
+      agentRole: role,
     },
   });
   const r = await retell(ws, "POST", "/v2/create-phone-call", {
@@ -123,7 +126,7 @@ export async function placeCall(
     to_number: e164(contact.phone),
     override_agent_id: retellAgentId,
     retell_llm_dynamic_variables: vars,
-    metadata: { ws, interactionId: it.id, contactId: o.contactId, opportunityId: o.opportunityId || "", campaignId: o.campaignId || "", memberId: o.memberId || "", agentRole: o.agentRole },
+    metadata: { ws, interactionId: it.id, contactId: o.contactId, opportunityId: o.opportunityId || "", campaignId: o.campaignId || "", memberId: o.memberId || "", agentRole: role, callStage: stage },
   });
   await db.interaction.update({ where: { id: it.id }, data: { providerRef: String(r.call_id), status: "in_progress" } });
   await db.contact.update({ where: { id: o.contactId }, data: { lastContactAt: new Date() } });
@@ -359,11 +362,20 @@ export async function bridgeCall(ws: string, userPhone: string, contactId: strin
   });
   const twiml = `<Response><Say>Connecting you to ${escapeXml(fullName(contact))}.</Say><Dial callerId="${from.number}" record="record-from-answer-dual"${
     base ? ` recordingStatusCallback="${base}/api/webhooks/twilio/recording?ws=${ws}&amp;it=${it.id}"` : ""
-  }><Number>${e164(contact.phone)}</Number></Dial></Response>`;
+  }><Number${await noticeAttr(ws, contactId)}>${e164(contact.phone)}</Number></Dial></Response>`;
   const r = await twilio(ws, "/Calls.json", { To: e164(userPhone)!, From: from.number, Twiml: twiml });
   await db.interaction.update({ where: { id: it.id }, data: { providerRef: String(r.sid) } });
   await audit(ws, actor, "call_started", { type: "contact", id: contactId });
   return it.id;
+}
+
+/** Twilio <Number url="…">: plays the recording notice to the person we call, when the owner switch is on. */
+export async function noticeAttr(ws: string, contactId: string) {
+  const { complianceFor } = await import("./switches");
+  const { governingState } = await import("./eligibility");
+  if (!(await complianceFor(ws, await governingState(ws, contactId))).recordingNotice) return "";
+  const base = (await setting(ws, "PUBLIC_URL"))?.replace(/\/$/, "");
+  return base ? ` url="${base}/api/webhooks/twilio/notice?ws=${ws}"` : "";
 }
 
 export function escapeXml(s: string) {
@@ -388,7 +400,7 @@ export async function inboundVoiceTwiml(ws: string, to: string, from: string) {
 
 export async function sendEmail(
   ws: string,
-  o: { to: string; subject: string; text: string; contactId?: string; opportunityId?: string; replyTo?: string; attachments?: { filename: string; content: Buffer }[]; skipChecks?: boolean }
+  o: { to: string; subject: string; text: string; html?: string; contactId?: string; opportunityId?: string; campaignId?: string; replyTo?: string; attachments?: { filename: string; content: Buffer }[]; skipChecks?: boolean; unsubscribeUrl?: string }
 ) {
   if (await demoGuard(ws)) return "Blocked: demo workspace never sends email";
   if (o.contactId && !o.skipChecks) {
@@ -406,6 +418,8 @@ export async function sendEmail(
       to: [o.to],
       subject: o.subject,
       text: o.text,
+      ...(o.html ? { html: o.html } : {}),
+      ...(o.unsubscribeUrl ? { headers: { "List-Unsubscribe": `<${o.unsubscribeUrl.replace("/u/", "/api/unsubscribe/")}>`, "List-Unsubscribe-Post": "List-Unsubscribe=One-Click" } } : {}),
       reply_to: o.replyTo,
       attachments: o.attachments?.map((a) => ({ filename: a.filename, content: a.content.toString("base64") })),
     }),
@@ -414,7 +428,7 @@ export async function sendEmail(
   const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
   if (!res.ok) throw new Error(`Email failed (${res.status}): ${String(data.message || "")}`);
   await db.interaction.create({
-    data: { workspaceId: ws, contactId: o.contactId, opportunityId: o.opportunityId, channel: "email", direction: "outbound", provider: "email", providerRef: data.id ? String(data.id) : undefined, fromAddr: from, toAddr: o.to, subject: o.subject, body: o.text },
+    data: { workspaceId: ws, contactId: o.contactId, opportunityId: o.opportunityId, campaignId: o.campaignId, channel: "email", direction: "outbound", provider: "email", providerRef: data.id ? String(data.id) : undefined, fromAddr: from, toAddr: o.to, subject: o.subject, body: o.text },
   });
   return `Emailed ${o.to}`;
 }

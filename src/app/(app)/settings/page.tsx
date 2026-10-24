@@ -9,7 +9,7 @@ export default async function SettingsHome() {
   const ws = c.workspace.id;
   const [packs, agents, templates, numbers, members, rs, steps] = await Promise.all([
     db.statePack.findMany({ where: { workspaceId: ws }, select: { status: true } }),
-    db.agent.count({ where: { workspaceId: ws } }),
+    db.agent.count({ where: { workspaceId: ws, active: true } }),
     db.contractTemplate.findMany({ where: { workspaceId: ws, active: true }, select: { body: true } }),
     db.phoneNumber.count({ where: { workspaceId: ws } }),
     db.membership.count({ where: { workspaceId: ws } }),
@@ -22,7 +22,9 @@ export default async function SettingsHome() {
     ["Connections", "Phone line, AI calling, email, data, Do Not Call checks", "/settings/integrations"],
     ["Phone numbers", `${numbers} number${numbers === 1 ? "" : "s"} · who answers incoming calls`, "/settings/phones"],
     ["States you work in", `${packs.filter((p) => p.status === "active").length} turned on`, "/settings/states"],
-    ["AI callers", `${agents} agents · what they say and do`, "/settings/agents"],
+    ["AI callers", `${agents} callers: sellers, buyers, incoming calls`, "/settings/agents"],
+    ["Calling rules", "Say it's an AI, recorded notice, cold outreach, your 'Get a cash offer' form", "/settings/calling"],
+    ["Email templates", "Designed emails with merge fields", "/settings/emails"],
     ["Contracts", `${templates.length} templates${sample ? " · samples still in use" : ""}`, "/settings/templates"],
     ["Team", `${members} people · invites`, "/settings/team"],
     ["My profile", "Name, your mobile, password", "/settings/profile"],

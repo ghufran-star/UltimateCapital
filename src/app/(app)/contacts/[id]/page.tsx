@@ -12,6 +12,7 @@ import { BUYER_STRATEGIES, CONDITION_TIERS, FUNDING_METHODS, PROPERTY_TYPES, US_
 import { can, pageCtx } from "@/lib/session";
 import { BUYER_OTHER, BUYER_STATUSES, label } from "@/lib/stages";
 import { ago, fmtDate, fullName, usd } from "@/lib/util";
+import { sendTemplateAction } from "../../../actions/emails";
 import { addNoteAction, callContactAction, consentAction, dncContactAction, emailContactAction, saveBuyBoxAction, textContactAction, updateContactAction } from "../../../actions/records";
 import { correctFactAction, editSummaryAction } from "../../../actions/deals";
 import { FilesPanel } from "@/components/files";
@@ -29,12 +30,13 @@ export default async function ContactPage({ params, searchParams }: { params: Pr
   });
   if (!ct) notFound();
   if (c.states.length && ct.kind === "seller" && !ct.ownerships.some((o) => c.states.includes(o.property.state)) && !(ct.state && c.states.includes(ct.state))) notFound();
-  const [interactions, facts, tasks, members, checks] = await Promise.all([
+  const [interactions, facts, tasks, members, checks, emailTpls] = await Promise.all([
     db.interaction.count({ where: { workspaceId: ws, contactId: id } }),
     db.fact.findMany({ where: { workspaceId: ws, entityType: "contact", entityId: id }, orderBy: { createdAt: "desc" }, take: 60 }),
     db.task.findMany({ where: { workspaceId: ws, contactId: id, status: "open" }, orderBy: { dueAt: "asc" } }),
     db.membership.findMany({ where: { workspaceId: ws }, include: { user: true } }),
     ct.phone ? db.phoneCheck.findMany({ where: { workspaceId: ws, phone: ct.phone }, orderBy: { checkedAt: "desc" }, take: 3 }) : Promise.resolve([]),
+    db.emailTemplate.findMany({ where: { workspaceId: ws, active: true, audience: { in: [ct.kind === "buyer" ? "buyer" : "seller", "any"] } }, select: { id: true, name: true } }),
   ]);
   const [eCall, eSms] = await Promise.all([checkEligibility(ws, id, "ai_call").catch(() => ({ ok: false, reason: "unknown" })), checkEligibility(ws, id, "sms").catch(() => ({ ok: false, reason: "unknown" }))]);
   const writable = can(c.role, ct.kind === "buyer" ? "buyers" : "sellers");
@@ -280,6 +282,19 @@ export default async function ContactPage({ params, searchParams }: { params: Pr
                   <textarea name="body" rows={2} className="field" placeholder="Email…" />
                   <Submit className="btn btn-ghost btn-sm">Send email</Submit>
                 </ActionForm>
+                {ct.email && emailTpls.length > 0 && (
+                  <ActionForm action={sendTemplateAction} className="flex flex-wrap items-center gap-2 md:col-span-2">
+                    <input type="hidden" name="contactId" value={id} />
+                    <select name="templateId" className="field w-auto max-w-full text-sm">
+                      {emailTpls.map((t) => (
+                        <option key={t.id} value={t.id}>
+                          {t.name}
+                        </option>
+                      ))}
+                    </select>
+                    <Submit className="btn btn-ghost btn-sm">Send designed email</Submit>
+                  </ActionForm>
+                )}
               </div>
             )}
           </Card>

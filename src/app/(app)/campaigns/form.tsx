@@ -6,7 +6,7 @@ import { Combo } from "@/components/combo";
 import { US_STATES } from "@/lib/catalog";
 import { saveCampaignAction } from "../../actions/ops";
 
-export function CampaignForm({ camp, agents, kind }: { camp?: Campaign; agents: Agent[]; kind?: string }) {
+export function CampaignForm({ camp, agents, kind, emails = [] }: { camp?: Campaign; agents: Agent[]; kind?: string; emails?: { id: string; name: string }[] }) {
   const s = (camp?.settings as unknown as CampaignSettings) || DEFAULT_CAMPAIGN;
   const k = camp?.kind || kind || "seller";
   return (
@@ -41,11 +41,11 @@ export function CampaignForm({ camp, agents, kind }: { camp?: Campaign; agents: 
         </Field>
         <div>
           <span className="text-sm font-medium">Channels</span>
-          <div className="mt-2 flex gap-4 text-sm">
+          <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm">
             {[
               ["call", "AI calls"],
               ["sms", "Texts"],
-              ["email", "Email"],
+              ["email", "Email (with the first call)"],
               ["human", "Team calls (power dialer)"],
             ].map(([v, l]) => (
               <label key={v} className="flex items-center gap-1">
@@ -76,6 +76,16 @@ export function CampaignForm({ camp, agents, kind }: { camp?: Campaign; agents: 
             <textarea name="smsTemplate" defaultValue={s.smsTemplate} rows={2} className="field" />
           </Field>
         </div>
+        <Field label="Email to send" hint="Edit designs in Settings → Email templates.">
+          <select name="emailTemplateId" defaultValue={s.emailTemplateId || ""} className="field">
+            <option value="">No email</option>
+            {emails.map((e) => (
+              <option key={e.id} value={e.id}>
+                {e.name}
+              </option>
+            ))}
+          </select>
+        </Field>
         <Field label="Budget ($, optional)" hint="Pauses the campaign when estimated call and text spend reaches it.">
           <input name="budget" defaultValue={s.budget ?? ""} className="field" inputMode="numeric" />
         </Field>

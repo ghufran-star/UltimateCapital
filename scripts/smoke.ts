@@ -69,6 +69,80 @@ async function main() {
   if (lc.ok) fail("liveCheck without provider should block cold outreach");
   console.log("compliance checks ok");
 
+  // Round 2: owner's calling hours, cold outreach mode, first-call rule, lists, emails, form, comps only after a price.
+  {
+    const { callingWindow } = await import("../src/lib/eligibility");
+    const { draftPack } = await import("../src/lib/states");
+    const pack = draftPack("TX");
+    const nineHouston = new Date("2026-10-21T14:00:00Z"); // 9am Houston = 7am Los Angeles
+    const w1 = await callingWindow(real.id, { timezone: null, state: "CA", phone: "+17135550998" }, "TX", pack, true, true, nineHouston);
+    if (w1.ok) fail("owner living in CA must not be called at 7am their time");
+    if (!w1.retryAt || w1.retryAt.toISOString() !== "2026-10-21T16:00:00.000Z") fail(`owner-hours retry should be 9am LA, got ${w1.retryAt?.toISOString()}`);
+    const w2 = await callingWindow(real.id, { timezone: null, state: "TX", phone: "+12135550100" }, "TX", pack, true, true, nineHouston);
+    if (w2.ok) fail("an LA area code at 7am LA time should wait");
+    const w3 = await callingWindow(real.id, { timezone: null, state: "CA", phone: "+17135550998" }, "TX", pack, true, false, nineHouston);
+    if (!w3.ok) fail("with the owner-hours switch off, only the property's hours apply");
+
+    const agents = await db.agent.findMany({ where: { workspaceId: real.id, active: true } });
+    if (agents.length !== 3) fail(`expected 3 AI callers, got ${agents.map((a) => a.role).join(",")}`);
+    const { callStageFor, handleTool } = await import("../src/lib/agents");
+    if ((await callStageFor(real.id, { contactId: c.id, requestedRole: "negotiation" })) !== "first") fail("a seller we've never spoken to must get the first-call stage, even when an offer call is asked for");
+    const refused = await handleTool(real.id, "get_offer_authority", {}, { metadata: { callStage: "first", opportunityId: "x", contactId: c.id } });
+    if (!/first conversation/i.test(String(refused.result))) fail("offer authority must be refused on a first call");
+
+    // Cold outreach mode lifts the consent requirement, nothing else.
+    const fresh = await db.contact.create({ data: { workspaceId: real.id, kind: "seller", firstName: "Cold", phone: "+17135550997", state: "TX" } });
+    const noConsent = await checkEligibility(real.id, fresh.id, "ai_call", daytime);
+    if (noConsent.ok || !/consent/i.test(noConsent.reason || "")) fail(`AI call without consent should need consent, got ${noConsent.reason}`);
+    const { getCompliance, saveCompliance } = await import("../src/lib/switches");
+    await saveCompliance(real.id, { ...(await getCompliance(real.id)), coldOutreach: true }, user.id);
+    const coldOn = await checkEligibility(real.id, fresh.id, "ai_call", daytime);
+    if (coldOn.ok || /consent for AI/i.test(coldOn.reason || "") || !/No live DNC check/.test(coldOn.reason || "")) fail(`cold mode should skip consent but keep the DNC check, got ${coldOn.reason}`);
+    await saveCompliance(real.id, { ...(await getCompliance(real.id)), coldOutreach: false }, user.id);
+    if (!(await db.auditEvent.count({ where: { workspaceId: real.id, action: "compliance_switches" } }))) fail("switch changes must be logged");
+
+    // A PropStream export, recognised and loaded into a new campaign; loading it again finds duplicates.
+    const { parseCsv } = await import("../src/lib/csv");
+    const { readList, loadSellerLeads } = await import("../src/lib/lists");
+    const csv = "Address,City,State,Zip,County,Owner 1 First Name,Owner 1 Last Name,Mailing Address,Mailing City,Mailing State,Mailing Zip,Est. Value,Est. Remaining balance of Open Loans,Phone 1,Phone 1 Type,Phone 2,Email 1\n12 Oak St,Houston,TX,77002,Harris,Ann,Lee,9 Pine Rd,San Diego,CA,92101,\"$210,000\",\"$40,000\",(713) 555-0181,Mobile,7135550182,ann@example.com\n14 Oak St,Houston,TX,77002,Harris,Bo,Diaz,14 Oak St,Houston,TX,77002,$180000,0,7135550183,Landline,,\n,,,,,No,Address,,,,,,,,,,\n";
+    const list = readList(parseCsv(csv));
+    if (list.format !== "propstream" || list.leads.length !== 2 || list.skipped !== 1) fail(`PropStream export not recognised: ${list.format} ${list.leads.length} ${list.skipped}`);
+    const r1 = await loadSellerLeads(real.id, list.leads, { source: "list:propstream", listLabel: "Smoke list", campaign: { mode: "new" }, actor: user.id });
+    if (r1.newDeals !== 2 || r1.newContacts !== 2 || !r1.campaignId) fail(`list load wrong: ${JSON.stringify(r1)}`);
+    const ann = await db.contact.findFirst({ where: { workspaceId: real.id, phone: "+17135550181" } });
+    if (ann?.state !== "CA" || ann.mailingCity !== "San Diego" || ann.source !== "list:propstream" || ann.phone2 !== "+17135550182") fail(`owner's mailing address not used: ${JSON.stringify(ann)}`);
+    const annProp = await db.property.findFirst({ where: { workspaceId: real.id, address: "12 Oak St" } });
+    if (annProp?.estValue !== 210000 || annProp.loanBalance !== 40000 || !annProp.absentee || !annProp.situations.includes("out_of_state")) fail(`list values not read: ${JSON.stringify(annProp)}`);
+    if ((await db.campaignMember.count({ where: { campaignId: r1.campaignId! } })) !== 2) fail("list members not in the campaign");
+    const r2 = await loadSellerLeads(real.id, list.leads, { source: "list:propstream", listLabel: "Smoke list again", campaign: { mode: "none" }, actor: user.id });
+    if (r2.newContacts !== 0 || r2.duplicates !== 2 || r2.newDeals !== 0) fail(`duplicates not merged: ${JSON.stringify(r2)}`);
+
+    // Sold comparables wait for the seller's price.
+    const { runValuation } = await import("../src/lib/valuation");
+    const listDeal = await db.opportunity.findFirstOrThrow({ where: { workspaceId: real.id, propertyId: annProp!.id } });
+    if (!/Waiting for the seller's price/.test(await runValuation(real.id, listDeal.id, { actor: "system" }))) fail("automatic valuation must wait for the seller's price");
+
+    // Email templates: footer and unsubscribe always present; the unsubscribe link round-trips.
+    const em = await import("../src/lib/emails");
+    await em.ensureStarterTemplates(real.id);
+    const tpl = await db.emailTemplate.findFirstOrThrow({ where: { workspaceId: real.id, audience: "seller", buttonUrl: { not: null } } });
+    const r = em.renderEmail(tpl, await em.mergeVars(real.id, { contactId: ann!.id }), { company: "Smoke Co", address: "1 Main St, Houston TX", unsubscribeUrl: `https://x.test/u/${em.unsubToken(ann!.id)}` });
+    if (!r.html.includes("Unsubscribe") || !r.html.includes("1 Main St") || !r.text.includes("Unsubscribe:") || !r.subject.includes("12 Oak St")) fail("email footer or merge fields missing");
+    if (em.readUnsubToken(em.unsubToken(ann!.id)) !== ann!.id || em.readUnsubToken(`${em.unsubToken(ann!.id)}x`)) fail("unsubscribe token check wrong");
+    const blockedEmail = await em.sendTemplateEmail(real.id, { templateId: tpl.id, contactId: ann!.id });
+    if (!/postal address/.test(blockedEmail)) fail(`email without a postal address must be blocked, got ${blockedEmail}`);
+    await em.unsubscribe(ann!.id, "smoke");
+    if ((await checkEligibility(real.id, ann!.id, "email")).ok) fail("unsubscribed email should be blocked");
+
+    // The cash offer form saves consent proof and gives the team a call task.
+    const { submitLeadForm } = await import("../src/lib/leadform");
+    await submitLeadForm(real.id, { firstName: "Form", lastName: "Lead", phone: "713-555-0190", email: "form@example.com", address: "77 Elm St", city: "Houston", state: "TX", zip: "77003", askingPrice: 150000, timeline: "Within 30 days", condition: "moderate", consent: true, page: "/f/x", ip: "1.2.3.4", userAgent: "smoke" });
+    const formLead = await db.contact.findFirstOrThrow({ where: { workspaceId: real.id, phone: "+17135550190" }, include: { consents: true } });
+    if (formLead.consents.length !== 4 || !formLead.consents[0].evidence.includes("1.2.3.4") || formLead.source !== "form") fail("form consent proof not saved");
+    if (!(await db.task.findFirst({ where: { workspaceId: real.id, contactId: formLead.id, kind: "follow_up" } }))) fail("form lead got no call task");
+    console.log("round 2 checks ok");
+  }
+
   // Demo standard: everything works through stand-ins, nothing real is touched.
   {
     const { runDemo } = await import("../src/lib/democtx");
@@ -137,11 +211,11 @@ async function main() {
   await db.session.create({ data: { id: sha(demoToken), userId: user.id, workspaceId: ws, expiresAt: new Date(Date.now() + 864e5) } });
   await db.session.create({ data: { id: sha(realToken), userId: user.id, workspaceId: real.id, expiresAt: new Date(Date.now() + 864e5) } });
 
-  const urls: string[] = ["/", "/approvals", "/approvals?tab=done", "/alerts", "/deals/new", "/properties", "/properties?tab=properties", "/properties/import", "/buyers", "/buyers/new", "/buyers/import", "/campaigns", "/campaigns/new", "/closing", "/closing?tab=signatures", "/closing?tab=payments", "/ops", "/ops?tab=tasks", "/ops?tab=tasks&who=ai", "/ops?tab=audit", "/ops?tab=system", "/settings", "/settings/integrations", "/settings/rules", "/settings/states", "/settings/agents", "/settings/templates", "/settings/templates/new", "/settings/phones", "/settings/team", "/settings/compliance", "/settings/profile", "/settings/controls", "/dialer", "/settings/autopilot", "/properties/find", "/buyers/find", "/reports", "/reports?days=365"];
+  const urls: string[] = ["/", "/approvals", "/approvals?tab=done", "/alerts", "/deals/new", "/properties", "/properties?tab=properties", "/properties/import", "/buyers", "/buyers/new", "/buyers/import", "/campaigns", "/campaigns/new", "/closing", "/closing?tab=signatures", "/closing?tab=payments", "/ops", "/ops?tab=tasks", "/ops?tab=tasks&who=ai", "/ops?tab=audit", "/ops?tab=system", "/settings", "/settings/integrations", "/settings/rules", "/settings/states", "/settings/agents", "/settings/templates", "/settings/templates/new", "/settings/phones", "/settings/team", "/settings/compliance", "/settings/profile", "/settings/controls", "/dialer", "/settings/autopilot", "/properties/find", "/properties/find?check=1&state=TX&county=Harris&lists=absentee-owner&lists=vacant&take=50&trace=on", "/buyers/find", "/buyers/find?check=1&state=TX&county=Bexar&take=40", "/settings/calling", "/settings/emails", "/settings/emails/new", "/reports", "/reports?days=365"];
   for (const v of ["active", "qualified", "hot", "contract", "leads", "closed", "all"]) urls.push(`/deals?view=${v}`);
   urls.push("/deals?sort=fee&dir=desc", "/deals?cols=property,arv,maxBuy,gapSeller,investorRoom,fee", "/properties?tab=properties&type=sfr", "/properties?situation=probate");
   urls.push("/agents", "/agents?days=7", "/agents/team", "/closing/documents", "/closing/documents/new");
-  for (const r of ["seller_acquisition", "property_discovery", "negotiation", "buyer_acquisition", "disposition", "receptionist", "transaction"]) urls.push(`/agents/${r}`, `/agents/${r}?outcome=positive&flagged=1`);
+  for (const r of ["seller_acquisition", "buyer_acquisition", "receptionist"]) urls.push(`/agents/${r}`, `/agents/${r}?outcome=positive&flagged=1`);
   for (const t of ["deals", "sellers", "properties", "buyers", "calls", "messages", "payments", "tasks", "title-companies", "audit"]) urls.push(`/api/export/${t}`);
   urls.push("/settings/app");
   {
@@ -162,6 +236,7 @@ async function main() {
   for (const p of await db.statePack.findMany({ where: { workspaceId: ws } })) urls.push(`/settings/states/${p.state}`);
   for (const a of await db.agent.findMany({ where: { workspaceId: ws } })) urls.push(`/settings/agents/${a.id}`);
   for (const tp of await db.contractTemplate.findMany({ where: { workspaceId: ws } })) urls.push(`/settings/templates/${tp.id}`);
+  for (const et of await db.emailTemplate.findMany({ where: { workspaceId: ws } })) urls.push(`/settings/emails/${et.id}`);
   for (const d of await db.opportunity.findMany({ where: { workspaceId: ws }, orderBy: { stage: "asc" }, take: 40 })) for (const tab of ["overview", "numbers", "buyers", "contracts", "closing", "files", "activity"]) urls.push(`/deals/${d.id}?tab=${tab}`);
   for (const ct of await db.contact.findMany({ where: { workspaceId: ws }, take: 60 })) urls.push(`/contacts/${ct.id}`);
   for (const ct of await db.contact.findMany({ where: { workspaceId: ws }, take: 5 })) for (const ch of ["ai_calls", "team_calls", "sms", "email", "note"]) urls.push(`/contacts/${ct.id}?ch=${ch}&lim=200`);
@@ -201,7 +276,7 @@ async function main() {
   writeFileSync("smoke-real-cookie.txt", realToken);
   writeFileSync("smoke-urls.txt", urls.join("\n") + "\n");
   const portal = await db.buyerInterest.findMany({ where: { portalToken: { not: null }, opportunity: { workspaceId: ws } }, take: 4, select: { portalToken: true } });
-  writeFileSync("smoke-public-urls.txt", [...portal.map((x) => `/d/${x.portalToken}`), "/d/not-a-real-token-xxxxxxx", "/a/expired-token-xxxxxxxx", `/sign/${signToken}`, "/sign/expired-token", ...offerTokens.flatMap((t) => [`/offer/${t}`, `/offer/${t}?preview=1`, `/api/offer/${t}/pdf`]), "/offer/not-a-real-offer-token", "/login", "/api/health", "/manifest.webmanifest", "/sw.js", "/offline.html", "/icon-192.png", "/apple-touch-icon.png"].join("\n") + "\n");
+  writeFileSync("smoke-public-urls.txt", [...portal.map((x) => `/d/${x.portalToken}`), "/d/not-a-real-token-xxxxxxx", "/a/expired-token-xxxxxxxx", `/sign/${signToken}`, "/sign/expired-token", ...offerTokens.flatMap((t) => [`/offer/${t}`, `/offer/${t}?preview=1`, `/api/offer/${t}/pdf`]), "/offer/not-a-real-offer-token", `/f/${ws}`, `/f/${ws}?embed=1`, "/f/not-a-workspace", "/u/preview", "/u/not-a-token", `/u/${(await import("../src/lib/emails")).unsubToken((await db.contact.findFirstOrThrow({ where: { workspaceId: ws, email: { not: null } } })).id)}`, "/login", "/api/health", "/manifest.webmanifest", "/sw.js", "/offline.html", "/icon-192.png", "/apple-touch-icon.png"].join("\n") + "\n");
   console.log(`${urls.length} pages to crawl`);
   await db.$disconnect();
 }

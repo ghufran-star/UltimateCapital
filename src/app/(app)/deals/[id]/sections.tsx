@@ -29,7 +29,9 @@ export function NumbersTab({ opp, v, calc, params, writable, playbook }: { opp: 
   return (
     <div className="grid gap-5 lg:grid-cols-3">
       <div className="space-y-5 lg:col-span-2">
+        {!v && !opp.askingPrice && !opp.sellerLowest && <Notice tone="info">Sold comparables are checked automatically once the seller tells us their price (each lookup costs money). You can still value it now with the button below.</Notice>}
         {v?.blocked && <Notice>Valuation blocked: {v.blocked}</Notice>}
+        <PriceCheck v={v} />
         {calc && (
           <Card title={`Calculation · rules v${v?.ruleVersion ?? "?"}`}>
             <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
@@ -986,5 +988,23 @@ function TitleWarnings({ t, state }: { t: { id: string; name: string; state: str
         Profile
       </Link>
     </p>
+  );
+}
+
+/** The list's value estimate and the seller's price, next to what sold comparables say. */
+function PriceCheck({ v }: { v?: Valuation }) {
+  const lc = ((v?.result || {}) as { listCheck?: { listValue: number | null; soldValue: number | null; listVsSoldPct: number | null; sellerPrice: number | null; sellerVsSoldPct: number | null; sellerVsMaxBuy: number | null } }).listCheck;
+  if (!lc || (!lc.soldValue && !lc.sellerPrice)) return null;
+  const pct = (n: number | null) => (n === null ? "" : `${n > 0 ? "+" : ""}${n}%`);
+  return (
+    <Card title="Price check">
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+        <Box l="Seller's price" v={usd(lc.sellerPrice)} s={lc.sellerVsSoldPct !== null ? `${pct(lc.sellerVsSoldPct)} vs sold` : undefined} />
+        <Box l="Sold comparables say" v={usd(lc.soldValue)} s="as it is today" />
+        <Box l="List estimate" v={usd(lc.listValue)} s={lc.listVsSoldPct !== null ? `${pct(lc.listVsSoldPct)} vs sold` : "not in the list"} />
+        <Box l="Seller vs most we'll pay" v={lc.sellerVsMaxBuy === null ? "—" : lc.sellerVsMaxBuy <= 0 ? "Fits" : `${usd(lc.sellerVsMaxBuy)} over`} strong />
+      </div>
+      {lc.listVsSoldPct !== null && Math.abs(lc.listVsSoldPct) >= 15 && <p className="mt-2 text-sm text-warn">The list&apos;s estimate is {Math.abs(lc.listVsSoldPct)}% {lc.listVsSoldPct > 0 ? "above" : "below"} what similar homes actually sold for. Trust the sold comparables.</p>}
+    </Card>
   );
 }

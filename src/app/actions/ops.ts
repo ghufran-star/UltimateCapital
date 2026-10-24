@@ -202,6 +202,7 @@ export async function saveCampaignAction(_: ActionState, fd: FormData): Promise<
       smsTemplate: str(fd.get("smsTemplate")) || DEFAULT_CAMPAIGN.smsTemplate,
       filters: { states: list(fd.get("fStates")).map((s) => s.toUpperCase()), zips: list(fd.get("fZips")), tags: list(fd.get("fTags")) },
       budget: int(fd.get("budget")),
+      emailTemplateId: str(fd.get("emailTemplateId")),
     };
     const name = str(fd.get("name"));
     if (!name) throw new Error("Name the campaign.");

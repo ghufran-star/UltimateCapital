@@ -24,7 +24,7 @@ export async function replyToInbound(ws: string, interactionId: string) {
   const facts = await db.fact.findMany({ where: { workspaceId: ws, entityId: c.id, supersededAt: null }, take: 30, orderBy: { createdAt: "desc" } });
   const opp = it.opportunityId ? await db.opportunity.findUnique({ where: { id: it.opportunityId }, include: { property: true } }) : c.kind === "seller" ? await db.opportunity.findFirst({ where: { workspaceId: ws, sellerId: c.id }, include: { property: true }, orderBy: { updatedAt: "desc" } }) : null;
   const company = (await setting(ws, "COMPANY_NAME")) || "our company";
-  const agent = await db.agent.findFirst({ where: { workspaceId: ws, role: c.kind === "buyer" ? (opp ? "disposition" : "buyer_acquisition") : "seller_acquisition" } });
+  const agent = await (await import("./agents")).agentForRole(ws, c.kind === "buyer" ? "buyer_acquisition" : "seller_acquisition");
   const out = await claudeJson<Reply>(ws, {
     kind: "fast",
     maxTokens: 800,

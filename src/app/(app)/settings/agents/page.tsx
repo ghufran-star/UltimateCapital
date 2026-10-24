@@ -1,16 +1,16 @@
 import Link from "next/link";
 import { Card, PageHeader } from "@/components/ui";
-import { AGENT_ROLES } from "@/lib/agents";
+import { LEGACY_ROLES, roleLabel } from "@/lib/agents";
 import { db } from "@/lib/db";
 import { pageCtx } from "@/lib/session";
 import { ago } from "@/lib/util";
 
 export default async function Agents() {
   const c = await pageCtx();
-  const agents = await db.agent.findMany({ where: { workspaceId: c.workspace.id }, orderBy: { name: "asc" } });
+  const agents = await db.agent.findMany({ where: { workspaceId: c.workspace.id, role: { notIn: Object.keys(LEGACY_ROLES) } }, orderBy: { name: "asc" } });
   return (
     <div className="max-w-4xl space-y-5">
-      <PageHeader back={{ href: "/settings", label: "Settings" }} title="AI agents" sub="Each agent's prompt is built in 6 layers: persona, hard rules, state rules, playbook, live context and tools." />
+      <PageHeader back={{ href: "/settings", label: "Settings" }} title="AI callers" sub="Three callers: sellers, buyers, and incoming calls. Each works in steps: a seller's first call is information and their price only, never an offer." />
       <Card title="How the layers work">
         <ol className="ml-4 list-decimal space-y-1 text-sm text-muted">
           <li>
@@ -24,6 +24,9 @@ export default async function Agents() {
           </li>
           <li>
             <b className="text-ink">Playbook</b> — your scripts, questions and objection handling (you edit).
+          </li>
+          <li>
+            <b className="text-ink">This call&apos;s step</b> — first conversation, follow-up or offer for sellers; getting to know them or presenting a deal for buyers (automatic).
           </li>
           <li>
             <b className="text-ink">Live context</b> — what we know about this person and deal, open questions, offer authority (automatic, per call).
@@ -41,7 +44,7 @@ export default async function Agents() {
               {a.active ? a.retellAgentId ? <span className="badge badge-good">Synced</span> : <span className="badge badge-warn">Not synced</span> : <span className="badge">Off</span>}
             </div>
             <div className="text-sm text-muted">
-              {AGENT_ROLES.find((r) => r.key === a.role)?.label} · v{a.version} · {a.tools.length} tools · edited {ago(a.updatedAt)}
+              {roleLabel(a.role)} · v{a.version} · {a.tools.length} tools · edited {ago(a.updatedAt)}
             </div>
           </Link>
         ))}

@@ -347,10 +347,9 @@ export default async function DealPage({ params, searchParams }: { params: Promi
                       <input type="hidden" name="mode" value="ai" />
                       <input type="hidden" name="opportunityId" value={opp.id} />
                       <select name="agentRole" defaultValue={["NEGOTIATION", "OFFER_READY"].includes(opp.stage) ? "negotiation" : ["QUALIFIED", "PROPERTY_DISCOVERY"].includes(opp.stage) ? "property_discovery" : "seller_acquisition"} className="field w-auto text-sm">
-                        <option value="seller_acquisition">Seller Acquisition agent</option>
-                        <option value="property_discovery">Property Discovery agent</option>
-                        <option value="negotiation">Negotiation agent</option>
-                        <option value="transaction">Transaction Coordinator agent</option>
+                        <option value="seller_acquisition">AI seller caller (picks the step)</option>
+                        <option value="property_discovery">AI seller caller: follow-up questions</option>
+                        <option value="negotiation">AI seller caller: present the offer</option>
                       </select>
                       <Submit className="btn btn-ghost btn-sm">Have the AI call</Submit>
                     </ActionForm>

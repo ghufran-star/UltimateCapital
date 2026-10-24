@@ -117,9 +117,15 @@ async function webResearch(ws: string, p: { address: string; city: string; state
   return { comps: out.comps.map((c) => ({ ...c, source: `Web research (unverified): ${c.url}` })) as Comp[], rent: out.rent || null };
 }
 
-export async function runValuation(ws: string, opportunityId: string, opts: { actor: string; arvOverride?: number; repairsOverride?: number } = { actor: "system" }) {
+export async function runValuation(ws: string, opportunityId: string, opts: { actor: string; arvOverride?: number; repairsOverride?: number; force?: boolean } = { actor: "system" }) {
   const opp = await db.opportunity.findUniqueOrThrow({ where: { id: opportunityId }, include: { property: true } });
   const p = opp.property;
+  // Sold comparables cost money per lookup: the automatic check waits until the seller has given a price.
+  // You can still value a deal by hand at any time.
+  if (opts.actor === "system" && !opts.force && !opts.arvOverride && !opp.askingPrice && !opp.sellerLowest) {
+    const verified = await db.fact.count({ where: { workspaceId: ws, entityType: "opportunity", entityId: opp.id, field: "arv", kind: "verified", supersededAt: null } });
+    if (!verified) return "Waiting for the seller's price before checking sold comparables";
+  }
   const rs = await activeRuleSet(ws);
   const facts = { state: p.state, market: p.city, zip: p.zip, propertyType: p.propertyType, dealType: opp.dealType, exit: opp.exitStrategy, conditionTier: p.conditionTier, occupancy: p.occupancy, titleFlags: p.titleFlags };
 
@@ -182,6 +188,17 @@ export async function runValuation(ws: string, opportunityId: string, opts: { ac
   }
 
   const calc = calculate({ arv: arv || 0, repairs, params, exit: opp.exitStrategy, rent, contractPrice: opp.contractPrice });
+  // The list's value estimate next to what sold comparables say, and the seller's price against both.
+  const soldValue = asIs || (comps.length >= 3 ? Math.round(comps.map((x) => x.price).sort((a, b) => a - b)[Math.floor(comps.length / 2)] / 1000) * 1000 : null);
+  const sellerPrice = opp.sellerLowest || opp.askingPrice || null;
+  const listCheck = {
+    listValue: p.estValue ?? null,
+    soldValue,
+    listVsSoldPct: p.estValue && soldValue ? Math.round(((p.estValue - soldValue) / soldValue) * 100) : null,
+    sellerPrice,
+    sellerVsSoldPct: sellerPrice && soldValue ? Math.round(((sellerPrice - soldValue) / soldValue) * 100) : null,
+    sellerVsMaxBuy: sellerPrice && arv ? sellerPrice - calc.maxBuy : null,
+  };
   const blocked = blockedReasons.length ? blockedReasons.join(" ") : null;
   const v = await db.valuation.create({
     data: {
@@ -196,7 +213,7 @@ export async function runValuation(ws: string, opportunityId: string, opts: { ac
       repairsHigh: manualRepairs || rep.high,
       repairItems: json(rep.lines),
       comps: json(comps.slice(0, 15)),
-      result: json(calc),
+      result: json({ ...calc, listCheck }),
       confidence: Math.max(0.1, Math.min(0.95, confidence)),
       blocked,
     },

@@ -1,6 +1,6 @@
 import { ActionForm, Submit } from "@/components/client";
 import { Card, Field, PageHeader } from "@/components/ui";
-import { AGENT_ROLES } from "@/lib/agents";
+import { roleLabel } from "@/lib/agents";
 import { getAutopilot } from "@/lib/autopilot";
 import { can, pageCtx } from "@/lib/session";
 import { label } from "@/lib/stages";
@@ -41,7 +41,7 @@ export default async function AutopilotPage() {
                     {s.label}
                     {s.repeat && <span className="block text-xs text-muted">repeats after each contact</span>}
                   </td>
-                  <td className="text-xs">{AGENT_ROLES.find((r) => r.key === s.role)?.label}</td>
+                  <td className="text-xs">{roleLabel(s.role)}</td>
                   <td className="text-right">
                     <input name={`step_h_${s.id}`} defaultValue={s.afterHours} className="field w-20 text-right tnum" inputMode="numeric" disabled={ro} />
                   </td>

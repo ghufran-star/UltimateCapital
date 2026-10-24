@@ -85,6 +85,7 @@ export const AUTO_TASKS = new Set([
   "call",
   "sms",
   "email",
+  "email_template",
   "buyer_outreach",
   "chase_title",
   "verification_pack",
@@ -219,7 +220,7 @@ export async function executeTask(t: { id: string; workspaceId: string; kind: st
     case "process_interaction":
       return (await import("./intel")).processInteraction(ws, t.entityId!);
     case "valuation":
-      return (await import("./valuation")).runValuation(ws, t.entityId!, { actor: "system" });
+      return (await import("./valuation")).runValuation(ws, t.entityId!, { actor: "system", force: Boolean(p.force) });
     case "matching":
       return (await import("./matching")).runMatching(ws, t.entityId!);
     case "hot_score":
@@ -250,6 +251,11 @@ export async function executeTask(t: { id: string; workspaceId: string; kind: st
     }
     case "email":
       return (await import("./comms")).sendEmail(ws, { to: String(p.to || ""), contactId: t.contactId || undefined, subject: String(p.subject || ""), text: String(p.text || ""), opportunityId: (p.opportunityId as string) || undefined });
+    case "email_template": {
+      const r = await (await import("./emails")).sendTemplateEmail(ws, { templateId: String(p.templateId || ""), contactId: t.contactId!, opportunityId: (p.opportunityId as string) || null, campaignId: (p.campaignId as string) || null });
+      if (p.memberId) await db.campaignMember.update({ where: { id: String(p.memberId) }, data: r.startsWith("Blocked") ? { status: "blocked", blockedReason: r.slice(9, 200) } : { lastOutcome: "emailed" } }).catch(() => null);
+      return r;
+    }
     case "chase_title":
       return (await import("./title")).chaseTitle(ws, t.entityId!);
     case "contract_deadline":

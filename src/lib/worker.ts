@@ -30,6 +30,14 @@ export function startWorker() {
   let lastDial = 0;
   let lastDigest = 0;
   let lastSync = 0;
+  // App updates: bring every real workspace's AI callers up to date (3 callers, staged prompts).
+  setTimeout(() => {
+    void (async () => {
+      if (!(await holdLease())) return;
+      const { ensureDefaultAgents } = await import("./agents");
+      for (const w of await db.workspace.findMany({ where: { isDemo: false }, select: { id: true } })) await ensureDefaultAgents(w.id).catch((e) => console.error("[agents] upgrade", e instanceof Error ? e.message : e));
+    })().catch((e) => console.error("[agents] upgrade", e instanceof Error ? e.message : e));
+  }, 15_000);
   // Build (or refresh an outdated) demo in the background, so "Try the demo" opens instantly.
   if (process.env.DEMO_PUBLIC !== "off") {
     setTimeout(() => {

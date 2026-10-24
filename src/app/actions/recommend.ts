@@ -71,7 +71,7 @@ export async function recAction(_: ActionState, fd: FormData): Promise<ActionSta
       return { ok: true, message: "Parked: automation off for this deal, reminder in 30 days" };
     }
     if (what === "value") {
-      await createTask(ws, { kind: "valuation", title: "Value the property", entityType: "opportunity", entityId: id, dueAt: new Date(), dedupeKey: `val:${id}` });
+      await createTask(ws, { kind: "valuation", title: "Value the property", entityType: "opportunity", entityId: id, dueAt: new Date(), dedupeKey: `val:${id}`, payload: { force: true } });
       await record(ws, c.user.id, { ...base, status: "acted", taken: "valuation" });
       return { ok: true, message: "Valuation queued" };
     }

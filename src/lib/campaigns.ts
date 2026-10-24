@@ -14,6 +14,8 @@ export type CampaignSettings = {
   smsTemplate: string;
   filters: { states?: string[]; zips?: string[]; propertyTypes?: string[]; tags?: string[] };
   budget?: number | null;
+  emailTemplateId?: string | null; // email sent with the first call and text (cold outreach)
+  fromList?: string | null;
 };
 
 export const DEFAULT_CAMPAIGN: CampaignSettings = {
@@ -54,7 +56,7 @@ export async function dialerTick() {
     }
     if (held.get(c.workspaceId)) continue;
     // Team-only campaigns are worked from the power dialer; the AI dialer leaves them alone.
-    if (!c.channels.some((ch) => ch === "call" || ch === "sms")) continue;
+    if (!c.channels.some((ch) => ch === "call" || ch === "sms" || ch === "email")) continue;
     const s = { ...DEFAULT_CAMPAIGN, ...((c.settings as Partial<CampaignSettings>) || {}) };
     if (s.budget) {
       const spend = await campaignSpend(c.workspaceId, c.id);
@@ -89,15 +91,24 @@ export async function dialerTick() {
       const opp = m.propertyId ? await db.opportunity.findFirst({ where: { workspaceId: c.workspaceId, propertyId: m.propertyId, sellerId: m.contactId } }) : null;
       const oppId = c.opportunityId || opp?.id;
       const useCall = c.channels.includes("call");
+      const useSms = c.channels.includes("sms");
+      const useEmail = c.channels.includes("email") && Boolean(s.emailTemplateId);
+      const firstTouch = m.attempts === 0 && !m.lastOutcome;
+      const main = useCall ? "call" : useSms ? "sms" : "email_template";
       await createTask(c.workspaceId, {
-        kind: useCall ? "call" : "sms",
-        title: `${c.name}: ${useCall ? "call" : "text"}`,
+        kind: main,
+        title: `${c.name}: ${main === "call" ? "call" : main === "sms" ? "text" : "email"}`,
         contactId: m.contactId,
         entityType: oppId ? "opportunity" : "contact",
         entityId: oppId || m.contactId,
-        payload: { agentRole: roleFor(c.kind), opportunityId: oppId, campaignId: c.id, memberId: m.id, body: useCall ? undefined : await smsBody(c.workspaceId, s.smsTemplate, m.contactId, m.propertyId) },
+        payload: { agentRole: roleFor(c.kind), opportunityId: oppId, campaignId: c.id, memberId: m.id, templateId: s.emailTemplateId, body: main === "sms" ? await smsBody(c.workspaceId, s.smsTemplate, m.contactId, m.propertyId) : undefined },
         dedupeKey: `campaign:${c.id}:${m.id}`,
       });
+      // Cold outreach: the first text and the email go out together with the first call.
+      if (firstTouch && useCall && useSms)
+        await createTask(c.workspaceId, { kind: "sms", title: `${c.name}: text`, contactId: m.contactId, entityType: oppId ? "opportunity" : "contact", entityId: oppId || m.contactId, payload: { opportunityId: oppId, campaignId: c.id, body: await smsBody(c.workspaceId, s.smsTemplate, m.contactId, m.propertyId) }, dedupeKey: `touch:${c.id}:${m.id}:sms` });
+      if (firstTouch && main !== "email_template" && useEmail)
+        await createTask(c.workspaceId, { kind: "email_template", title: `${c.name}: email`, contactId: m.contactId, entityType: oppId ? "opportunity" : "contact", entityId: oppId || m.contactId, payload: { opportunityId: oppId, campaignId: c.id, templateId: s.emailTemplateId }, dedupeKey: `touch:${c.id}:${m.id}:email` });
       await db.campaignMember.update({
         where: { id: m.id },
         data: { status: "retry", nextAttemptAt: new Date(Date.now() + s.retryGapHours * 3600_000), ...(useCall ? {} : { attempts: { increment: 1 } }) },

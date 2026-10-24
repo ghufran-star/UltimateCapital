@@ -1,3 +1,4 @@
+import { canonicalRole } from "./agents";
 import { audit, json, notify } from "./audit";
 import { claudeJson } from "./claude";
 import { db } from "./db";
@@ -12,7 +13,7 @@ export async function reviewCall(ws: string, interactionId: string) {
   const it = await db.interaction.findUnique({ where: { id: interactionId }, include: { contact: true } });
   if (!it || it.channel !== "call" || it.provider !== "retell" || !it.body || it.body.length < 200) return null;
   const meta = (it.intel || {}) as Record<string, unknown>;
-  const role = String(meta.agentRole || (it.contact?.kind === "buyer" ? "disposition" : "seller_acquisition"));
+  const role = canonicalRole(String(meta.agentRole || (it.contact?.kind === "buyer" ? "buyer_acquisition" : "seller_acquisition"))) === "buyer_acquisition" ? "disposition" : "seller_acquisition";
   // What the agent was allowed to say: offers the rules engine released on this deal up to this call.
   const allowed = it.opportunityId ? await db.offer.findMany({ where: { opportunityId: it.opportunityId, by: "us", createdAt: { lte: new Date(+it.createdAt + 60 * 60_000) } } }) : [];
   const sellerMax = Math.max(0, ...allowed.filter((o) => o.side === "seller").map((o) => o.price));

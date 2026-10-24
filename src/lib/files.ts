@@ -8,6 +8,10 @@ export const FILE_KINDS = [
   { key: "title", label: "Title document" },
   { key: "settlement", label: "Settlement statement" },
   { key: "contract", label: "Contract" },
+  { key: "wire", label: "Wire instructions" },
+  { key: "eo", label: "E&O / insurance certificate" },
+  { key: "cpl", label: "Closing protection letter" },
+  { key: "w9", label: "W-9" },
   { key: "other", label: "Other" },
 ] as const;
 

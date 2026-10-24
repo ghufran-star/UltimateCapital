@@ -49,6 +49,9 @@ export function startWorker() {
           lastSync = Date.now();
           const { syncRetellCalls } = await import("./comms");
           for (const w of await db.workspace.findMany({ where: { isDemo: false }, select: { id: true } })) await syncRetellCalls(w.id, 6).catch((e) => console.error("[retell sync]", e instanceof Error ? e.message : e));
+          // The free Texas title list, once a month after someone has loaded it.
+          const tx = await db.titleLicensee.findFirst({ where: { workspaceId: null, source: "tx_tdi" }, orderBy: { fetchedAt: "desc" }, select: { fetchedAt: true } });
+          if (tx && Date.now() - tx.fetchedAt.getTime() > 30 * 86_400_000) await (await import("./titledir")).refreshTexas().catch((e) => console.error("[title list]", e instanceof Error ? e.message : e));
         }
         if (Date.now() - lastDigest > 10 * 60_000) {
           lastDigest = Date.now();

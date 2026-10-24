@@ -15,6 +15,7 @@ export async function uploadFilesAction(_: ActionState, fd: FormData): Promise<A
     const entityId = String(fd.get("entityId"));
     if (entityType === "opportunity") await assertDeal(c, entityId);
     else if (entityType === "contact") await db.contact.findFirstOrThrow({ where: { id: entityId, workspaceId: c.workspace.id } });
+    else if (entityType === "title_company") await db.titleCompany.findFirstOrThrow({ where: { id: entityId, workspaceId: c.workspace.id } });
     else throw new Error("Unknown record.");
     const files = fd.getAll("files").filter((f): f is File => typeof f === "object" && "arrayBuffer" in f && f.size > 0);
     if (!files.length) throw new Error("Choose a file.");

@@ -680,9 +680,56 @@ model TitleCompany {
   turnaround  String?
   notes       String?
   wireVerifiedPhone String? // known number used to verify wire instructions
+  website     String?
+  address     String?
+  city        String?
+  zip         String?
+  states      String[] @default([]) // states they close in
+  offices     Json? // [{label, address, city, state, zip, phone}]
+  // Capabilities: "yes" | "no" | null (unknown)
+  assignments          String?
+  doubleClose          String?
+  transactionalFunding String?
+  remoteClosing        String? // remote online closings (RON)
+  mobileNotary         String?
+  emdHandling          String? // how earnest money is held / how fast it's receipted
+  attorneyStates       String[] @default([]) // states where they close through an attorney
+  underwriters         String[] @default([])
+  licenseNo            String?
+  licenseState         String?
+  licenseCheckedAt     DateTime?
+  wireConfirmedAt      DateTime? // the known wire number was confirmed by calling it
+  wireConfirmedBy      String?
+  status               String   @default("active") // preferred | active | avoid
+  createdAt            DateTime @default(now())
 
   workspace    Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   transactions Transaction[]
+}
+
+// Licensed title agencies from free state lists (workspaceId null = public list; set = a list one workspace uploaded).
+model TitleLicensee {
+  id           String   @id @default(cuid())
+  key          String   @unique // scope:state:license-or-name
+  workspaceId  String?
+  state        String
+  name         String
+  licenseNo    String?
+  licenseType  String?
+  city         String?
+  county       String?
+  zip          String?
+  phone        String?
+  email        String?
+  website      String?
+  counties     String[] @default([])
+  underwriters String[] @default([])
+  status       String?
+  source       String // tx_tdi | csv | demo
+  fetchedAt    DateTime @default(now())
+
+  @@index([state, name])
+  @@index([workspaceId])
 }
 
 model Transaction {

@@ -80,7 +80,14 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ tabl
         rows = (await db.task.findMany({ where: { workspaceId: ws }, orderBy: { dueAt: "desc" }, take: 50000 })).map((t) => ({ id: t.id, title: t.title, kind: t.kind, status: t.status, due: t.dueAt, assignee: t.assignee, priority: t.priority, result: t.result }));
         break;
       case "title-companies":
-        rows = (await db.titleCompany.findMany({ where: { workspaceId: ws } })).map((t) => ({ ...t, contacts: t.contacts ? JSON.stringify(t.contacts) : "" }));
+        {
+          const ts = await db.titleCompany.findMany({ where: { workspaceId: ws }, orderBy: { name: "asc" } });
+          const tr = await (await import("@/lib/titledir")).trackRecords(ws);
+          rows = ts.map(({ workspaceId: _w, contacts, offices, ...t }) => {
+            const r = tr.get(t.id);
+            return { ...t, states: t.states.join(" "), attorneyStates: t.attorneyStates.join(" "), underwriters: t.underwriters.join("; "), people: contacts ? (contacts as { name?: string; role?: string; email?: string; phone?: string }[]).map((p) => [p.name, p.role, p.email, p.phone].filter(Boolean).join(" / ")).join("; ") : "", offices: offices ? JSON.stringify(offices) : "", deals: r?.deals || 0, closed: r?.closed || 0, fell_through: r?.fell || 0, avg_days_to_close: r?.avgDays ?? "", on_time_pct: r?.onTime ?? "", fees_closed: r?.fees || 0 };
+          });
+        }
         break;
       case "audit":
         rows = (await db.auditEvent.findMany({ where: { workspaceId: ws }, orderBy: { createdAt: "desc" }, take: 50000 })).map((a) => ({ when: a.createdAt, actor: a.actor, action: a.action, entity: a.entityType, entity_id: a.entityId, before: a.before, after: a.after, meta: a.meta }));

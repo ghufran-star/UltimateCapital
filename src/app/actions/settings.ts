@@ -340,24 +340,6 @@ export async function savePhoneAction(_: ActionState, fd: FormData): Promise<Act
   });
 }
 
-// ---------- Title companies ----------
-
-export async function saveTitleCompanyAction(_: ActionState, fd: FormData): Promise<ActionState> {
-  return act(async () => {
-    const c = await requireCtx("closing", { write: true });
-    const id = str(fd.get("titleCompanyId"));
-    const name = str(fd.get("name"));
-    if (!name) throw new Error("Name the title company.");
-    const data = { name, state: str(fd.get("state"))?.toUpperCase() || null, email: str(fd.get("email")), phone: e164(str(fd.get("phone"))), fees: str(fd.get("fees")), turnaround: str(fd.get("turnaround")), notes: str(fd.get("notes")), wireVerifiedPhone: e164(str(fd.get("wireVerifiedPhone"))) };
-    if (id) {
-      await db.titleCompany.findFirstOrThrow({ where: { id, workspaceId: c.workspace.id } });
-      await db.titleCompany.update({ where: { id }, data });
-    } else await db.titleCompany.create({ data: { ...data, workspaceId: c.workspace.id } });
-    await audit(c.workspace.id, c.user.id, "title_company_saved", { type: "title_company", id: id || name });
-    return { ok: true, message: "Saved" };
-  });
-}
-
 // ---------- Compliance ----------
 
 export async function importDncAction(_: ActionState, fd: FormData): Promise<ActionState> {

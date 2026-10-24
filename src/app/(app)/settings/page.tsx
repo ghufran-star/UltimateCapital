@@ -38,7 +38,7 @@ export default async function SettingsHome() {
     ["Contract templates", `${templates.length} active${sample ? " · sample in use" : ""}`, "/settings/templates"],
     ["Integrations", "Claude, Retell, Twilio, Resend, RentCast, DNC", "/settings/integrations"],
     ["Phone numbers", `${numbers} numbers · inbound routing`, "/settings/phones"],
-    ["Title companies", `${titles} saved`, "/settings/title"],
+    ["Title companies", `${titles} saved`, "/closing/title"],
     ["Compliance", "DNC lists, suppressions, consent", "/settings/compliance"],
     ["Team & workspaces", `${members} members · invites · demo`, "/settings/team"],
     ["My profile", "Name, phone for calls, password", "/settings/profile"],

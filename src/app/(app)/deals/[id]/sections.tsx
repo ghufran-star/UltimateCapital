@@ -732,14 +732,20 @@ export async function ClosingTab({ opp, ws, writable }: { opp: Deal; ws: string;
               <F l="Title company">
                 <select name="titleCompanyId" defaultValue={tx?.titleCompanyId || ""} className="field">
                   <option value="">Choose…</option>
-                  {titleCos.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.name}
-                      {t.state ? ` (${t.state})` : ""}
-                    </option>
-                  ))}
+                  {[...titleCos]
+                    .sort((a, b) => titleRank(b, opp.property.state) - titleRank(a, opp.property.state) || a.name.localeCompare(b.name))
+                    .map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.status === "preferred" ? "★ " : ""}
+                        {t.name}
+                        {t.state ? ` (${t.state})` : ""}
+                        {t.status === "avoid" ? " — avoid" : !titleCovers(t, opp.property.state) ? ` — not in ${opp.property.state}` : ""}
+                        {t.assignments === "no" ? " — no assignments" : ""}
+                      </option>
+                    ))}
                 </select>
               </F>
+              {tx?.titleCompany && <TitleWarnings t={tx.titleCompany} state={opp.property.state} />}
               <F l="Closing date">
                 <input type="date" name="closingAt" defaultValue={tx?.closingAt ? tx.closingAt.toISOString().slice(0, 10) : ""} className="field" />
               </F>
@@ -752,7 +758,10 @@ export async function ClosingTab({ opp, ws, writable }: { opp: Deal; ws: string;
               <Submit className="btn btn-ghost">Save</Submit>
             </ActionForm>
           ) : (
-            <KV items={[["Title", tx?.titleCompany?.name], ["Closing", fmtDate(tx?.closingAt)], ["Fee", usd(tx?.assignmentFee)]]} />
+            <>
+              <KV items={[["Title", tx?.titleCompany ? <Link href={`/closing/title/${tx.titleCompany.id}`}>{tx.titleCompany.name}</Link> : null], ["Closing", fmtDate(tx?.closingAt)], ["Fee", usd(tx?.assignmentFee)]]} />
+              {tx?.titleCompany && <TitleWarnings t={tx.titleCompany} state={opp.property.state} />}
+            </>
           )}
           {tx && (
             <div className="mt-4 space-y-2 text-sm">
@@ -942,5 +951,27 @@ function F({ l, children }: { l: string; children: React.ReactNode }) {
       <span className="text-xs font-medium text-muted">{l}</span>
       {children}
     </label>
+  );
+}
+
+const titleCovers = (t: { state: string | null; states: string[] }, st: string) => t.state === st || t.states.includes(st);
+const titleRank = (t: { state: string | null; states: string[]; status: string; assignments: string | null }, st: string) => (titleCovers(t, st) ? 4 : 0) + (t.status === "preferred" ? 2 : t.status === "avoid" ? -8 : 0) + (t.assignments === "yes" ? 1 : t.assignments === "no" ? -2 : 0);
+
+/** What to watch for with the chosen title company on this deal. */
+function TitleWarnings({ t, state }: { t: { id: string; name: string; state: string | null; states: string[]; status: string; assignments: string | null; wireVerifiedPhone: string | null; wireConfirmedAt: Date | null }; state: string }) {
+  const w: string[] = [];
+  if (t.status === "avoid") w.push("marked Avoid");
+  if (!titleCovers(t, state)) w.push(`not listed as closing in ${state}`);
+  if (t.assignments === "no") w.push("doesn't close assignments");
+  if (!t.wireVerifiedPhone) w.push("no known number for wire checks");
+  else if (!t.wireConfirmedAt) w.push("wire number not confirmed by phone");
+  if (!w.length) return null;
+  return (
+    <p className="mt-2 text-xs text-warn">
+      ⚠ {t.name}: {w.join("; ")}.{" "}
+      <Link href={`/closing/title/${t.id}`} className="underline">
+        Profile
+      </Link>
+    </p>
   );
 }
